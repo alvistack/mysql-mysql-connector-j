@@ -1,0 +1,5 @@
+mysql-connector-java (100:8.0.29-1) UNRELEASED; urgency=medium
+
+  * https://github.com/alvistack/mysql-mysql-connector-j/releases/tag/8.0.29
+
+ -- Wong Hoi Sing Edison <hswong3i@gmail.com>  Mon, 11 Jul 2022 22:43:17 +0800
