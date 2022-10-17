@@ -1,1 +1,8 @@
+CHANGES
+INFO_BIN
+INFO_SRC
+README
+build.xml
+mysql-connector-java-*.jar
+src/
 usr/share/java/mysql-connector-java.jar
