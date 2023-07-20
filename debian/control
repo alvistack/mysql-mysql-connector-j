@@ -1,0 +1,23 @@
+Source: mysql-connector-java
+Section: java
+Priority: optional
+Standards-Version: 4.5.0
+Maintainer: Wong Hoi Sing Edison <hswong3i@gmail.com>
+Homepage: https://github.com/mysql/mysql-connector-j/tags
+Vcs-Browser: https://github.com/alvistack/mysql-mysql-connector-j
+Vcs-Git: https://github.com/alvistack/mysql-mysql-connector-j.git
+Build-Depends:
+ debhelper,
+ debhelper-compat (= 10),
+
+Package: mysql-connector-java
+Architecture: all
+Description: MySQL Connector/J
+ MySQL provides connectivity for client applications developed in the
+ Java programming language with MySQL Connector/J, a driver that
+ implements the Java Database Connectivity (JDBC) API and also MySQL X
+ DevAPI.
+Depends:
+ ${misc:Depends},
+ ${shlibs:Depends},
+ java-runtime,
