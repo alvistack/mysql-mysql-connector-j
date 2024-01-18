@@ -1,0 +1,30 @@
+#!/usr/bin/make -f
+
+SHELL := /bin/bash
+
+override_dh_auto_build:
+
+override_dh_auto_install:
+	install -Dpm755 -d debian/tmp/usr/share/java
+	install -Dpm755 -t debian/tmp/usr/share/java mysql-connector-j-*.jar
+	pushd debian/tmp/usr/share/java && \
+		ln -fs mysql-connector-j-*.jar mysql-connector-j.jar && \
+		ln -fs mysql-connector-j.jar mysql-connector-java.jar && \
+		popd
+
+override_dh_strip:
+
+override_dh_strip_nondeterminism:
+
+override_dh_shlibdeps:
+
+override_dh_makeshlibs:
+
+override_dh_dwz:
+
+override_dh_auto_test:
+
+override_dh_auto_clean:
+
+%:
+	dh $@
