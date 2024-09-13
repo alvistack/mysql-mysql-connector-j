@@ -14035,4 +14035,23 @@ public class StatementRegressionTest extends BaseTestCase {
         assertEquals(10, this.pstmt.getQueryTimeout());
     }
 
+    /**
+     * Tests fix for Bug#96786 (Bug#30280035), Retrieving streaming result set fails when closeOnCompletion is enabled.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testBug96786() throws Exception {
+        createTable("testBug96786", "(id INT)");
+        this.stmt = this.conn.createStatement(java.sql.ResultSet.TYPE_FORWARD_ONLY, java.sql.ResultSet.CONCUR_READ_ONLY);
+        this.stmt.setFetchSize(Integer.MIN_VALUE);
+        this.stmt.execute("INSERT INTO testBug96786 VALUES (1)");
+        this.stmt.closeOnCompletion();
+        this.rs = this.stmt.executeQuery("SELECT * FROM testBug96786");
+        assertTrue(this.rs.next());
+        assertEquals(1, this.rs.getInt(1));
+        this.rs.close();
+        assertTrue(this.stmt.isClosed());
+    }
+
 }

@@ -1359,7 +1359,7 @@ public class StatementImpl implements JdbcStatement {
         Lock connectionLock = c.getConnectionLock();
         connectionLock.lock();
         try {
-            ((NativeSession) c.getSession()).<ResultSetImpl>execSQL(this, nonQuery, -1, null, false, getResultSetFactory(), null, false).close();
+            ((NativeSession) c.getSession()).<ResultSetImpl>execSQL(this, nonQuery, -1, null, false, getResultSetFactory(), null, false).doClose();
         } finally {
             connectionLock.unlock();
         }
