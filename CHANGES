@@ -1,6 +1,8 @@
 # Changelog
 # https://dev.mysql.com/doc/relnotes/connector-j/en/
 
+Version 9.2.0
+
 Version 9.1.0
 
   - Fix for Bug#116114 (Bug#37067812), Connector/J is writing incorrect values when passed negative dates.
