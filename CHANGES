@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#71143 (Bug#17967091), Calling ResultSet.updateRow should not set all field values in UPDATE.
+
   - Fix for Bug#103437 (Bug#32807360), Syntax error when calling PreparedStatement.getMetadata() with LIMIT placeholded.
 
   - Fix for Bug#96786 (Bug#30280035), Retrieving streaming result set fails when closeOnCompletion is enabled.

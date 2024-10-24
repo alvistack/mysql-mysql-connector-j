@@ -83,6 +83,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 import javax.sql.rowset.CachedRowSet;
@@ -96,6 +97,7 @@ import org.junit.jupiter.api.Test;
 import com.mysql.cj.Messages;
 import com.mysql.cj.MysqlConnection;
 import com.mysql.cj.MysqlType;
+import com.mysql.cj.Query;
 import com.mysql.cj.conf.DefaultPropertySet;
 import com.mysql.cj.conf.PropertyDefinitions.DatabaseTerm;
 import com.mysql.cj.conf.PropertyDefinitions.SslMode;
@@ -115,6 +117,7 @@ import com.mysql.cj.jdbc.result.ResultSetImpl;
 import com.mysql.cj.jdbc.result.UpdatableResultSet;
 import com.mysql.cj.log.Log;
 import com.mysql.cj.protocol.InternalDate;
+import com.mysql.cj.protocol.Resultset;
 import com.mysql.cj.protocol.a.result.NativeResultset;
 import com.mysql.cj.protocol.a.result.ResultsetRowsCursor;
 import com.mysql.cj.protocol.a.result.ResultsetRowsStreaming;
@@ -123,6 +126,7 @@ import com.mysql.cj.util.StringUtils;
 import com.mysql.cj.util.TimeUtil;
 import com.mysql.cj.util.Util;
 
+import testsuite.BaseQueryInterceptor;
 import testsuite.BaseTestCase;
 import testsuite.BufferingLogger;
 
@@ -5435,7 +5439,7 @@ public class ResultSetRegressionTest extends BaseTestCase {
         boolean testJSON = versionMeetsMinimum(5, 7, 9);
 
         StringBuilder sb = new StringBuilder("(id int primary key, f01 DECIMAL, f02 TINYINT, f03 BOOLEAN, f04 SMALLINT, f05 INT,"
-                + " f06 FLOAT, f07 DOUBLE, f08 TIMESTAMP, f09 BIGINT, f10 MEDIUMINT, f11 DATE, f12 TIME, f13 DATETIME, f14 YEAR,"
+                + " f06 FLOAT, f07 DOUBLE, f08 TIMESTAMP NULL DEFAULT NULL, f09 BIGINT, f10 MEDIUMINT, f11 DATE, f12 TIME, f13 DATETIME, f14 YEAR,"
                 + " f15 VARCHAR(20) character set utf8, f16 VARBINARY(30), f17 BIT, f18 ENUM('x','y','z'), f19 SET('a','b','c'),"
                 + " f20 TINYBLOB, f21 TINYTEXT character set utf8, f22 MEDIUMBLOB, f23 MEDIUMTEXT character set utf8,"
                 + " f24 LONGBLOB, f25 LONGTEXT character set utf8, f26 BLOB, f27 TEXT character set utf8,"
@@ -8331,6 +8335,166 @@ public class ResultSetRegressionTest extends BaseTestCase {
                 }
             }
         } while ((useZF = !useZF) || (useNull = !useNull) || (useSPS = !useSPS) || (usePS = !usePS));
+    }
+
+    /**
+     * Tests fix for Bug#71143 (Bug#17967091), Calling ResultSet.updateRow should not set all field values in UPDATE.
+     *
+     * @throws Exception
+     */
+    @Test
+    void testBug71143() throws Exception {
+        String cols = "(id INT PRIMARY KEY, c1 TINYTEXT, c2 TINYTEXT, c3 TINYTEXT, c4 DECIMAL, c5 TINYBLOB, c6 TINYBLOB, c7 TINYBLOB, c8 TINYBLOB,"
+                + " c9 TINYBLOB, c10 TINYBLOB, c11 BOOLEAN, c12 BIT, c13 VARBINARY(5), c14 MEDIUMTEXT, c15 MEDIUMTEXT, c16 MEDIUMTEXT, c17 TINYTEXT,"
+                + " c18 TINYTEXT, c19 TINYTEXT, c20 DATE, c21 DOUBLE, c22 FLOAT, c23 INT, c24 BIGINT, c25 MEDIUMTEXT character set utf8,"
+                + " c26 MEDIUMTEXT character set utf8, c27 TEXT character set utf8, c28 TEXT character set utf8, c29 TEXT character set utf8,"
+                + " c30 VARCHAR(5) character set utf8, c31 VARCHAR(5), c32 BLOB, c33 BLOB, c34 BLOB, c35 BLOB, c36 SMALLINT, c37 VARCHAR(255),"
+                + " c38 VARCHAR(5), c39 TIME, c40 DATETIME)";
+
+        createTable("testBug71143", cols);
+
+        this.stmt.executeUpdate("INSERT INTO testBug71143 VALUES(1, 'a', 'a', 'a', 1, 'a', 'a', 'a', 'a', 'a', 'a', 1, 1, 1, 'a', 'a', 'a', 'a', 'a', 'a',"
+                + " '2000-01-01', 1, 1, 1, 1, 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a', 1, 'a', 'a', '12:00:00',  '2000-01-01 00:00:00')");
+
+        this.pstmt = this.conn.prepareStatement("SELECT * FROM testBug71143 WHERE id=1 FOR UPDATE", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_UPDATABLE);
+        this.rs = this.pstmt.executeQuery();
+        assertTrue(this.rs.next());
+
+        Calendar cal = Calendar.getInstance();
+        cal.set(2002, 01, 02, 10, 30, 0);
+        cal.set(Calendar.MILLISECOND, 0);
+
+        this.rs.updateAsciiStream(2, new ByteArrayInputStream("b".getBytes())); //c1 TINYTEXT
+        this.rs.updateAsciiStream(3, new ByteArrayInputStream("b".getBytes()), 1); //c2 TINYTEXT
+        this.rs.updateAsciiStream(4, new ByteArrayInputStream("b".getBytes()), 1L);  //c3 TINYTEXT
+        this.rs.updateBigDecimal(5, BigDecimal.valueOf(2));  //c4 DECIMAL
+        this.rs.updateBinaryStream(6, new ByteArrayInputStream(new byte[] { 98 })); //c5 TINYBLOB
+        this.rs.updateBinaryStream(7, new ByteArrayInputStream(new byte[] { 98 }), 1); //c6 TINYBLOB
+        this.rs.updateBinaryStream(8, new ByteArrayInputStream(new byte[] { 98 }), 1L);  //c7 TINYBLOB
+        this.rs.updateBlob(9, new com.mysql.cj.jdbc.Blob("b".getBytes(), null)); //c8 TINYBLOB
+        this.rs.updateBlob(10, new ByteArrayInputStream(new byte[] { 98 })); //c9 TINYBLOB
+        this.rs.updateBlob(11, new ByteArrayInputStream(new byte[] { 98 }), 1); //c10 TINYBLOB
+        this.rs.updateBoolean(12, false); //c11 BOOLEAN
+        this.rs.updateByte(13, (byte) 0); //c12 BIT
+        this.rs.updateBytes(14, new byte[] { 98 }); //c13 VARBINARY(5)
+        this.rs.updateCharacterStream(15, new StringReader("b")); //c14 MEDIUMTEXT
+        this.rs.updateCharacterStream(16, new StringReader("b"), 1); //c15 MEDIUMTEXT
+        this.rs.updateCharacterStream(17, new StringReader("b"), 1L); //c16 MEDIUMTEXT
+        this.rs.updateClob(18, new com.mysql.cj.jdbc.Clob("b", null)); //c17 TINYTEXT
+        this.rs.updateClob(19, new StringReader("b")); //c18 TINYTEXT
+        this.rs.updateClob(20, new StringReader("b"), 1); // c19 TINYTEXT
+        this.rs.updateDate(21, new Date(cal.getTimeInMillis())); //c20 DATE
+        this.rs.updateDouble(22, 2); //c21 DOUBLE
+        this.rs.updateFloat(23, 2); //c22 FLOAT
+        this.rs.updateInt(24, 2); //c23 INT
+        this.rs.updateLong(25, 2); //c24 BIGINT
+        this.rs.updateNCharacterStream(26, new StringReader("b")); //c25 MEDIUMTEXT
+        this.rs.updateNCharacterStream(27, new StringReader("b"), 1); //c26 MEDIUMTEXT
+        this.rs.updateNClob(28, new com.mysql.cj.jdbc.NClob("b", null)); // c27 TEXT
+        this.rs.updateNClob(29, new StringReader("b")); // c28 TEXT
+        this.rs.updateNClob(30, new StringReader("b"), 1); // c29 TEXT
+        this.rs.updateNString(31, "b"); // c30 VARCHAR(5)
+        this.rs.updateNull(32); // c31 VARCHAR(5)
+        this.rs.updateObject(33, "b"); //c32 BLOB
+        this.rs.updateObject(34, "b", 1); //c33 BLOB
+        this.rs.updateObject(35, "b", MysqlType.BLOB); //c34 BLOB
+        this.rs.updateObject(36, "b", MysqlType.BLOB, 1); //c35 BLOB
+        this.rs.updateShort(37, (short) 2); //c36 SMALLINT
+
+        SQLXML xml = new MysqlSQLXML(null);
+        xml.setString("<doc/>");
+        this.rs.updateSQLXML(38, xml); //c37 VARCHAR(255)
+        this.rs.updateString(39, "b"); //c38 VARCHAR(5)
+        this.rs.updateTime(40, new Time(cal.getTimeInMillis())); //c39 TIME
+        this.rs.updateTimestamp(41, new Timestamp(cal.getTimeInMillis())); //c40 DATETIME
+
+        this.rs.updateRow();
+
+        this.rs = this.stmt.executeQuery("SELECT * FROM testBug71143");
+        assertTrue(this.rs.next());
+        assertEquals(1, this.rs.getInt(1));
+        assertEquals("b", this.rs.getString(2));
+        assertEquals("b", this.rs.getString(3));
+        assertEquals("b", this.rs.getString(4));
+        assertEquals(BigDecimal.valueOf(2), this.rs.getBigDecimal(5));
+        Blob blob = this.rs.getBlob(6);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        blob = this.rs.getBlob(7);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        blob = this.rs.getBlob(8);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        blob = this.rs.getBlob(9);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        blob = this.rs.getBlob(10);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        blob = this.rs.getBlob(11);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        assertEquals(false, this.rs.getBoolean(12));
+        assertEquals(0, this.rs.getByte(13));
+        blob = this.rs.getBlob(14);
+        assertTrue(Arrays.equals(new byte[] { 98 }, blob.getBytes(1, (int) blob.length())));
+        assertEquals("b", this.rs.getString(15));
+        assertEquals("b", this.rs.getString(16));
+        assertEquals("b", this.rs.getString(17));
+        assertEquals("b", this.rs.getString(18));
+        assertEquals("b", this.rs.getString(19));
+        assertEquals("b", this.rs.getString(20));
+        assertEquals("2002-02-02", this.rs.getDate(21).toString());
+        assertEquals(2, this.rs.getDouble(22));
+        assertEquals(2, this.rs.getFloat(23));
+        assertEquals(2, this.rs.getInt(24));
+        assertEquals(2, this.rs.getLong(25));
+        assertEquals("b", this.rs.getString(26));
+        assertEquals("b", this.rs.getString(27));
+        assertEquals("b", this.rs.getString(28));
+        assertEquals("b", this.rs.getString(29));
+        assertEquals("b", this.rs.getString(30));
+        assertEquals("b", this.rs.getString(31));
+        assertEquals(null, this.rs.getString(32));
+        assertEquals("b", this.rs.getString(33));
+        assertEquals("b", this.rs.getString(34));
+        assertEquals("b", this.rs.getString(35));
+        assertEquals("b", this.rs.getString(36));
+        assertEquals(2, this.rs.getShort(37));
+        assertEquals("<doc/>", this.rs.getSQLXML(38).getString());
+        assertEquals("b", this.rs.getString(39));
+        assertEquals("10:30:00", this.rs.getTime(40).toString());
+        assertEquals("2002-02-02 10:30:00.0", this.rs.getTimestamp(41).toString());
+
+        Properties props = new Properties();
+        props.setProperty(PropertyKey.queryInterceptors.getKeyName(), Bug71143QueryInterceptor.class.getName());
+        Connection testConn = getConnectionWithProps(props);
+        this.pstmt = testConn.prepareStatement("SELECT * FROM testBug71143 WHERE id=1 FOR UPDATE", ResultSet.TYPE_FORWARD_ONLY, ResultSet.CONCUR_UPDATABLE);
+        this.rs = this.pstmt.executeQuery();
+        assertTrue(this.rs.next());
+
+        this.rs.updateBoolean(12, false); //c11 BOOLEAN
+        this.rs.updateInt(24, 2); //c23 INT
+        this.rs.updateString(39, "b"); //c38 VARCHAR(5)
+        this.rs.updateRow();
+    }
+
+    public static class Bug71143QueryInterceptor extends BaseQueryInterceptor {
+
+        public static boolean errorOnSetTrue = false;
+
+        @Override
+        public <T extends Resultset> T preProcess(Supplier<String> str, Query interceptedQuery) {
+            String sql = str.get();
+            if (sql.startsWith("UPDATE")) {
+                String[] expectedColumns = { "c11", "c23", "c38", "id" };
+                for (String expectedColumn : expectedColumns) {
+                    assertTrue(sql.contains(expectedColumn));
+                }
+                for (int i = 1; i <= 40; i++) {
+                    if (i != 11 && i != 23 && i != 38) {
+                        assertFalse(sql.contains("`c" + i + "`"));
+                    }
+                }
+            }
+            return null;
+        }
+
     }
 
 }

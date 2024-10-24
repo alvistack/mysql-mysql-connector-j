@@ -28,16 +28,22 @@ import java.sql.Clob;
 import java.sql.JDBCType;
 import java.sql.NClob;
 import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLType;
 import java.sql.SQLXML;
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.locks.Lock;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import com.mysql.cj.Messages;
 import com.mysql.cj.MysqlType;
@@ -94,6 +100,11 @@ public class UpdatableResultSet extends ResultSetImpl {
     /** List of primary keys */
     private List<Integer> primaryKeyIndices = null;
 
+    private List<String> fieldsToUpdate = new ArrayList<>();
+    private Set<Integer> columnsToUpdate = null;
+    Map<Integer, SetterWithException> setters = new TreeMap<>();
+
+    private StringBuilder keyValues = null;
     private String qualifiedAndQuotedTableName;
 
     private String quotedIdChar = null;
@@ -109,9 +120,6 @@ public class UpdatableResultSet extends ResultSetImpl {
     /** PreparedStatement used to delete data */
     protected ClientPreparedStatement updater = null;
 
-    /** SQL for in-place modifcation */
-    private String updateSQL = null;
-
     private boolean populateInserterWithDefaultValues = false;
     private boolean pedantic;
 
@@ -124,6 +132,13 @@ public class UpdatableResultSet extends ResultSetImpl {
 
     /** Are we in the middle of doing updates to the current row? */
     protected boolean doingUpdates = false;
+
+    @FunctionalInterface
+    interface SetterWithException {
+
+        void accept(int i) throws SQLException, SQLFeatureNotSupportedException;
+
+    }
 
     /**
      * Creates a new ResultSet object.
@@ -581,7 +596,7 @@ public class UpdatableResultSet extends ResultSetImpl {
         this.primaryKeyIndices = new ArrayList<>();
 
         StringBuilder fieldValues = new StringBuilder();
-        StringBuilder keyValues = new StringBuilder();
+        this.keyValues = new StringBuilder();
         StringBuilder columnNames = new StringBuilder();
         StringBuilder insertPlaceHolders = new StringBuilder();
         StringBuilder allTablesBuf = new StringBuilder();
@@ -655,13 +670,13 @@ public class UpdatableResultSet extends ResultSetImpl {
             if (fields[i].isPrimaryKey()) {
                 this.primaryKeyIndices.add(Integer.valueOf(i));
 
-                if (keyValues.length() > 0) {
-                    keyValues.append(" AND ");
+                if (this.keyValues.length() > 0) {
+                    this.keyValues.append(" AND ");
                 }
 
-                keyValues.append(qualifiedColumnName);
-                keyValues.append("<=>");
-                keyValues.append("?");
+                this.keyValues.append(qualifiedColumnName);
+                this.keyValues.append("<=>");
+                this.keyValues.append("?");
             }
 
             if (fieldValues.length() == 0) {
@@ -676,16 +691,22 @@ public class UpdatableResultSet extends ResultSetImpl {
 
             columnNames.append(qualifiedColumnName);
 
+            this.fieldsToUpdate.add(qualifiedColumnName + "=?");
             fieldValues.append(qualifiedColumnName);
             fieldValues.append("=?");
         }
 
         this.qualifiedAndQuotedTableName = allTablesBuf.toString();
 
-        this.updateSQL = "UPDATE " + this.qualifiedAndQuotedTableName + " " + fieldValues.toString() + " WHERE " + keyValues.toString();
         this.insertSQL = "INSERT INTO " + this.qualifiedAndQuotedTableName + " (" + columnNames.toString() + ") VALUES (" + insertPlaceHolders.toString() + ")";
-        this.refreshSQL = "SELECT " + columnNames.toString() + " FROM " + this.qualifiedAndQuotedTableName + " WHERE " + keyValues.toString();
-        this.deleteSQL = "DELETE FROM " + this.qualifiedAndQuotedTableName + " WHERE " + keyValues.toString();
+        this.refreshSQL = "SELECT " + columnNames.toString() + " FROM " + this.qualifiedAndQuotedTableName + " WHERE " + this.keyValues.toString();
+        this.deleteSQL = "DELETE FROM " + this.qualifiedAndQuotedTableName + " WHERE " + this.keyValues.toString();
+    }
+
+    private String generateFilteredUpdateSQL() {
+        return "UPDATE " + this.qualifiedAndQuotedTableName + " SET " + IntStream.range(0, this.fieldsToUpdate.size())
+                .filter(i -> this.columnsToUpdate.contains(i)).mapToObj(this.fieldsToUpdate::get).collect(Collectors.joining(",")).toString() + " WHERE "
+                + this.keyValues.toString();
     }
 
     private Map<String, Integer> getColumnsToIndexMapForTableAndDB(String databaseName, String tableName) {
@@ -1040,6 +1061,16 @@ public class UpdatableResultSet extends ResultSetImpl {
 
         int numKeys = this.primaryKeyIndices.size();
 
+        Map<Integer, Integer> updateColumnIndexes = null;
+        if (this.doingUpdates) {
+            updateColumnIndexes = new HashMap<>();
+            for (int i = 0; i < getMetadata().getFields().length; i++) {
+                if (this.columnsToUpdate.contains(i)) {
+                    updateColumnIndexes.put(i, updateColumnIndexes.size());
+                }
+            }
+        }
+
         for (int i = 0; i < numKeys; i++) {
             byte[] dataFrom = null;
             int index = this.primaryKeyIndices.get(i).intValue();
@@ -1049,15 +1080,22 @@ public class UpdatableResultSet extends ResultSetImpl {
                 continue;
             }
 
-            dataFrom = updateInsertStmt.getBytesRepresentation(index + 1);
+            dataFrom = updateInsertStmt != null ? updateInsertStmt.getBytesRepresentation(index + 1) : null;
 
             // Primary keys not set?
-            if (updateInsertStmt.isNull(index + 1) || dataFrom.length == 0) {
+            if (updateInsertStmt == null || updateInsertStmt.isNull(index + 1) || dataFrom.length == 0
+                    || this.doingUpdates && !this.columnsToUpdate.contains(index)) {
                 setParamValue(this.refresher, i + 1, this.thisRow, index, getMetadata().getFields()[index]);
                 continue;
             }
 
-            this.refresher.getQueryBindings().setFromBindValue(i, updateInsertStmt.getQueryBindings().getBindValues()[index]);
+            if (this.doingUpdates) {
+                this.refresher.getQueryBindings().setFromBindValue(i, updateInsertStmt.getQueryBindings().getBindValues()[updateColumnIndexes.get(index)]);
+
+            } else {
+                this.refresher.getQueryBindings().setFromBindValue(i, updateInsertStmt.getQueryBindings().getBindValues()[index]);
+
+            }
         }
 
         java.sql.ResultSet rs = null;
@@ -1142,46 +1180,10 @@ public class UpdatableResultSet extends ResultSetImpl {
      *             if an error occurs
      */
     protected void syncUpdate() throws SQLException {
-        if (this.updater == null) {
-            if (this.updateSQL == null) {
-                generateStatements();
-            }
-
-            this.updater = (ClientPreparedStatement) getConnection().clientPrepareStatement(this.updateSQL);
-            this.updater.getQueryBindings().setColumnDefinition(getMetadata());
-        }
-
-        Field[] fields = getMetadata().getFields();
-        int numFields = fields.length;
-        this.updater.clearParameters();
-
-        for (int i = 0; i < numFields; i++) {
-            if (this.thisRow.getBytes(i) != null) {
-                switch (fields[i].getMysqlType()) {
-                    case DATE:
-                    case DATETIME:
-                    case TIME:
-                    case TIMESTAMP:
-                        // TODO this is a temporary workaround until Bug#71143 "Calling ResultSet.updateRow should not set all field values in UPDATE" is fixed.
-                        // We handle these types separately to avoid fractional seconds truncation (when sendFractionalSeconds=true)
-                        // that happens for fields we don't touch with ResultSet.updateNN(). For those fields we should pass the value as is or,
-                        // better don't put them into final updater statement as requested by Bug#71143.
-                        this.updater.setString(i + 1, getString(i + 1));
-                        break;
-                    default:
-                        this.updater.setObject(i + 1, getObject(i + 1), fields[i].getMysqlType());
-                        break;
-                }
-
-            } else {
-                this.updater.setNull(i + 1, 0);
-            }
-        }
-
-        int numKeys = this.primaryKeyIndices.size();
-        for (int i = 0; i < numKeys; i++) {
-            int idx = this.primaryKeyIndices.get(i).intValue();
-            setParamValue(this.updater, numFields + i + 1, this.thisRow, idx, fields[idx]);
+        this.columnsToUpdate = new HashSet<>();
+        this.setters = new TreeMap<>();
+        if (this.keyValues == null) {
+            generateStatements();
         }
     }
 
@@ -1195,6 +1197,20 @@ public class UpdatableResultSet extends ResultSetImpl {
             }
 
             if (this.doingUpdates) {
+                this.updater = (ClientPreparedStatement) getConnection().clientPrepareStatement(generateFilteredUpdateSQL());
+
+                int col = 1;
+                for (Map.Entry<Integer, SetterWithException> entry : this.setters.entrySet()) {
+                    entry.getValue().accept(col);
+                    col++;
+                }
+                Field[] fields = getMetadata().getFields();
+
+                int numKeys = this.primaryKeyIndices.size();
+                for (int i = 0; i < numKeys; i++) {
+                    int idx = this.primaryKeyIndices.get(i).intValue();
+                    setParamValue(this.updater, this.setters.size() + i + 1, this.thisRow, idx, fields[idx]);
+                }
                 this.updater.executeUpdate();
                 refreshRow(this.updater, this.thisRow);
                 this.doingUpdates = false;
@@ -1230,7 +1246,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setAsciiStream(columnIndex, x, length);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setAsciiStream(idx, x, length);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setAsciiStream(columnIndex, x, length);
                 this.thisRow.setBytes(columnIndex - 1, STREAM_DATA_MARKER);
@@ -1256,7 +1274,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setBigDecimal(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setBigDecimal(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setBigDecimal(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, x == null ? null : StringUtils.getBytes(x.toString()));
@@ -1282,7 +1302,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setBinaryStream(columnIndex, x, length);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setBinaryStream(idx, x, length);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setBinaryStream(columnIndex, x, length);
                 this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -1308,7 +1330,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setBlob(columnIndex, blob);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setBlob(idx, blob);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setBlob(columnIndex, blob);
                 this.thisRow.setBytes(columnIndex - 1, blob == null ? null : STREAM_DATA_MARKER);
@@ -1334,7 +1358,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setBoolean(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setBoolean(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setBoolean(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1360,7 +1386,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setByte(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setByte(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setByte(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1386,7 +1414,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setBytes(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setBytes(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setBytes(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, x);
@@ -1412,7 +1442,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setCharacterStream(columnIndex, x, length);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setCharacterStream(idx, x, length);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setCharacterStream(columnIndex, x, length);
                 this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -1458,7 +1490,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setDate(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setDate(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setDate(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1484,7 +1518,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setDouble(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setDouble(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setDouble(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1510,7 +1546,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setFloat(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setFloat(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setFloat(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1536,7 +1574,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setInt(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setInt(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setInt(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1562,7 +1602,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setLong(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setLong(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setLong(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1588,7 +1630,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setNull(columnIndex, 0);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setNull(idx, 0);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setNull(columnIndex, 0);
                 this.thisRow.setBytes(columnIndex - 1, null);
@@ -1668,11 +1712,20 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter;
                 if (targetType == null) {
-                    this.updater.setObject(columnIndex, x);
+                    setter = idx -> this.updater.setObject(idx, x);
                 } else {
-                    this.updater.setObject(columnIndex, x, targetType);
+                    if (targetType.getVendorTypeNumber() == Types.REF_CURSOR || targetType.getVendorTypeNumber() == Types.TIME_WITH_TIMEZONE
+                            || targetType.getVendorTypeNumber() == Types.TIMESTAMP_WITH_TIMEZONE) {
+                        throw SQLError.createSQLFeatureNotSupportedException(Messages.getString("Statement.UnsupportedSQLType") + targetType,
+                                MysqlErrorNumbers.SQLSTATE_CONNJ_DRIVER_NOT_CAPABLE, getExceptionInterceptor());
+                    }
+
+                    setter = idx -> this.updater.setObject(idx, x, targetType);
                 }
+                this.setters.put(columnIndex, setter);
             } else {
                 if (targetType == null) {
                     this.inserter.setObject(columnIndex, x);
@@ -1723,7 +1776,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setShort(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setShort(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setShort(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1749,7 +1804,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setString(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setString(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setString(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, x == null ? null : StringUtils.getBytes(x, this.charEncoding));
@@ -1775,7 +1832,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setTime(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setTime(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setTime(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1801,7 +1860,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setTimestamp(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setTimestamp(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setTimestamp(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, this.inserter.getBytesRepresentation(columnIndex));
@@ -1824,7 +1885,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setAsciiStream(columnIndex, x);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setAsciiStream(idx, x);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setAsciiStream(columnIndex, x);
             this.thisRow.setBytes(columnIndex - 1, STREAM_DATA_MARKER);
@@ -1844,7 +1907,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setAsciiStream(columnIndex, x, length);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setAsciiStream(idx, x, length);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setAsciiStream(columnIndex, x, length);
             this.thisRow.setBytes(columnIndex - 1, STREAM_DATA_MARKER);
@@ -1864,7 +1929,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setBinaryStream(columnIndex, x);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setBinaryStream(idx, x);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setBinaryStream(columnIndex, x);
             this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -1884,7 +1951,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setBinaryStream(columnIndex, x, length);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setBinaryStream(idx, x, length);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setBinaryStream(columnIndex, x, length);
             this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -1904,7 +1973,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setBlob(columnIndex, inputStream);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setBlob(idx, inputStream);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setBlob(columnIndex, inputStream);
             this.thisRow.setBytes(columnIndex - 1, inputStream == null ? null : STREAM_DATA_MARKER);
@@ -1924,7 +1995,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setBlob(columnIndex, inputStream, length);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setBlob(idx, inputStream, length);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setBlob(columnIndex, inputStream, length);
             this.thisRow.setBytes(columnIndex - 1, inputStream == null ? null : STREAM_DATA_MARKER);
@@ -1944,7 +2017,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setCharacterStream(columnIndex, x);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setCharacterStream(idx, x);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setCharacterStream(columnIndex, x);
             this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -1964,7 +2039,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setCharacterStream(columnIndex, x, length);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setCharacterStream(idx, x, length);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setCharacterStream(columnIndex, x, length);
             this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -2009,7 +2086,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                 syncUpdate();
             }
 
-            this.updater.setNCharacterStream(columnIndex, x);
+            this.columnsToUpdate.add(columnIndex - 1);
+            SetterWithException setter = idx -> this.updater.setNCharacterStream(idx, x);
+            this.setters.put(columnIndex, setter);
         } else {
             this.inserter.setNCharacterStream(columnIndex, x);
             this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -2037,7 +2116,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setNCharacterStream(columnIndex, x, length);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setNCharacterStream(idx, x, length);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setNCharacterStream(columnIndex, x, length);
                 this.thisRow.setBytes(columnIndex - 1, x == null ? null : STREAM_DATA_MARKER);
@@ -2131,7 +2212,9 @@ public class UpdatableResultSet extends ResultSetImpl {
                     syncUpdate();
                 }
 
-                this.updater.setNString(columnIndex, x);
+                this.columnsToUpdate.add(columnIndex - 1);
+                SetterWithException setter = idx -> this.updater.setNString(idx, x);
+                this.setters.put(columnIndex, setter);
             } else {
                 this.inserter.setNString(columnIndex, x);
                 this.thisRow.setBytes(columnIndex - 1, x == null ? null : StringUtils.getBytes(x, fieldEncoding));
