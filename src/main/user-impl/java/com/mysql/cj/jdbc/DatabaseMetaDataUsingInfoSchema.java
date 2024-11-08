@@ -20,6 +20,7 @@
 
 package com.mysql.cj.jdbc;
 
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -62,7 +63,7 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
         super(connToSet, databaseToSet, resultSetFactory);
     }
 
-    protected ResultSet executeMetadataQuery(java.sql.PreparedStatement pStmt) throws SQLException {
+    protected ResultSet executeMetadataQuery(PreparedStatement pStmt) throws SQLException {
         ResultSet rs = pStmt.executeQuery();
         ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).setOwningStatement(null);
 
@@ -70,34 +71,34 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public java.sql.ResultSet getColumnPrivileges(String catalog, String schema, String table, String columnNamePattern) throws SQLException {
-        String db = getDatabase(catalog, schema);
+    public ResultSet getColumnPrivileges(String catalog, String schema, String table, String columnNamePattern) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        final String dbPattern = getDatabase(catalog, schema);
+        final String dbFilter = this.pedantic ? dbPattern : StringUtils.unQuoteIdentifier(dbPattern, this.quotedId);
+        final String tableNameFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
+        final String columnNameFilter = this.pedantic ? columnNamePattern : StringUtils.unQuoteIdentifier(columnNamePattern, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT TABLE_CATALOG, TABLE_SCHEMA," : "SELECT TABLE_SCHEMA, NULL,");
-        sqlBuf.append(
+        StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT TABLE_CATALOG, TABLE_SCHEMA," : "SELECT TABLE_SCHEMA, NULL,");
+        query.append(
                 " TABLE_NAME, COLUMN_NAME, NULL AS GRANTOR, GRANTEE, PRIVILEGE_TYPE AS PRIVILEGE, IS_GRANTABLE FROM INFORMATION_SCHEMA.COLUMN_PRIVILEGES WHERE");
-        if (db != null) {
-            sqlBuf.append(" TABLE_SCHEMA=? AND");
+        if (dbFilter != null) {
+            query.append(" TABLE_SCHEMA=? AND");
         }
-
-        sqlBuf.append(" TABLE_NAME =?");
+        query.append(" TABLE_NAME = ?");
         if (columnNamePattern != null) {
-            sqlBuf.append(" AND COLUMN_NAME LIKE ?");
+            query.append(" AND COLUMN_NAME LIKE ?");
         }
-        sqlBuf.append(" ORDER BY COLUMN_NAME, PRIVILEGE_TYPE");
+        query.append(" ORDER BY COLUMN_NAME, PRIVILEGE_TYPE");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            pStmt.setString(nextId++, db);
-            pStmt.setString(nextId++, table);
-            if (columnNamePattern != null) {
-                pStmt.setString(nextId, columnNamePattern);
+            pStmt.setString(nextId++, dbFilter);
+            pStmt.setString(nextId++, tableNameFilter);
+            if (columnNameFilter != null) {
+                pStmt.setString(nextId, columnNameFilter);
             }
 
             ResultSet rs = executeMetadataQuery(pStmt);
@@ -112,166 +113,164 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public ResultSet getColumns(String catalog, String schemaPattern, String tableName, String columnNamePattern) throws SQLException {
-        String db = getDatabase(catalog, schemaPattern);
+    public ResultSet getColumns(String catalog, String schemaPattern, String tableNamePattern, String columnNamePattern) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schemaPattern);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String tableNameFilter = this.pedantic ? tableNamePattern : StringUtils.unQuoteIdentifier(tableNamePattern, this.quotedId);
+        final String columnNameFilter = this.pedantic ? columnNamePattern : StringUtils.unQuoteIdentifier(columnNamePattern, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
+        StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT TABLE_CATALOG, TABLE_SCHEMA," : "SELECT TABLE_SCHEMA, NULL,");
+        query.append(" TABLE_NAME, COLUMN_NAME,");
 
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT TABLE_CATALOG, TABLE_SCHEMA," : "SELECT TABLE_SCHEMA, NULL,");
-        sqlBuf.append(" TABLE_NAME, COLUMN_NAME,");
+        appendJdbcTypeMappingQuery(query, "DATA_TYPE", "COLUMN_TYPE");
+        query.append(" AS DATA_TYPE, ");
 
-        appendJdbcTypeMappingQuery(sqlBuf, "DATA_TYPE", "COLUMN_TYPE");
-        sqlBuf.append(" AS DATA_TYPE, ");
-
-        sqlBuf.append("UPPER(CASE");
+        query.append("UPPER(CASE");
         if (this.tinyInt1isBit) {
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='TINYINT' THEN CASE");
-            sqlBuf.append(
+            query.append(" WHEN UPPER(DATA_TYPE)='TINYINT' THEN CASE");
+            query.append(
                     " WHEN LOCATE('ZEROFILL', UPPER(COLUMN_TYPE)) = 0 AND LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) = 0 AND LOCATE('(1)', COLUMN_TYPE) != 0 THEN ");
-            sqlBuf.append(this.transformedBitIsBoolean ? "'BOOLEAN'" : "'BIT'");
-            sqlBuf.append(" WHEN LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 THEN 'TINYINT UNSIGNED'");
-            sqlBuf.append(" ELSE DATA_TYPE END ");
+            query.append(this.transformedBitIsBoolean ? "'BOOLEAN'" : "'BIT'");
+            query.append(" WHEN LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 THEN 'TINYINT UNSIGNED'");
+            query.append(" ELSE DATA_TYPE END ");
         }
-        sqlBuf.append(
+        query.append(
                 " WHEN LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 AND LOCATE('SET', UPPER(DATA_TYPE)) <> 1 AND LOCATE('ENUM', UPPER(DATA_TYPE)) <> 1 THEN CONCAT(DATA_TYPE, ' UNSIGNED')");
 
         // spatial data types
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 'GEOMETRY'");
 
-        sqlBuf.append(" ELSE UPPER(DATA_TYPE) END) AS TYPE_NAME,");
+        query.append(" ELSE UPPER(DATA_TYPE) END) AS TYPE_NAME,");
 
-        sqlBuf.append("UPPER(CASE");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='DATE' THEN 10"); // supported range is '1000-01-01' to '9999-12-31'
+        query.append("UPPER(CASE");
+        query.append(" WHEN UPPER(DATA_TYPE)='DATE' THEN 10"); // supported range is '1000-01-01' to '9999-12-31'
         if (this.conn.getServerVersion().meetsMinimum(ServerVersion.parseVersion("5.6.4"))) {
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='TIME'"); // supported range is '-838:59:59.000000' to '838:59:59.000000'
-            sqlBuf.append("  THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='DATETIME' OR"); // supported range is '1000-01-01 00:00:00.000000' to '9999-12-31 23:59:59.999999'
-            sqlBuf.append("  UPPER(DATA_TYPE)='TIMESTAMP'"); // supported range is '1970-01-01 00:00:01.000000' UTC to '2038-01-19 03:14:07.999999' UTC
-            sqlBuf.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+            query.append(" WHEN UPPER(DATA_TYPE)='TIME'"); // supported range is '-838:59:59.000000' to '838:59:59.000000'
+            query.append("  THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+            query.append(" WHEN UPPER(DATA_TYPE)='DATETIME' OR"); // supported range is '1000-01-01 00:00:00.000000' to '9999-12-31 23:59:59.999999'
+            query.append("  UPPER(DATA_TYPE)='TIMESTAMP'"); // supported range is '1970-01-01 00:00:01.000000' UTC to '2038-01-19 03:14:07.999999' UTC
+            query.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
         } else {
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='TIME' THEN 8"); // supported range is '-838:59:59.000000' to '838:59:59.000000'
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='DATETIME' OR"); // supported range is '1000-01-01 00:00:00.000000' to '9999-12-31 23:59:59.999999'
-            sqlBuf.append("  UPPER(DATA_TYPE)='TIMESTAMP'"); // supported range is '1970-01-01 00:00:01.000000' UTC to '2038-01-19 03:14:07.999999' UTC
-            sqlBuf.append("  THEN 19");
+            query.append(" WHEN UPPER(DATA_TYPE)='TIME' THEN 8"); // supported range is '-838:59:59.000000' to '838:59:59.000000'
+            query.append(" WHEN UPPER(DATA_TYPE)='DATETIME' OR"); // supported range is '1000-01-01 00:00:00.000000' to '9999-12-31 23:59:59.999999'
+            query.append("  UPPER(DATA_TYPE)='TIMESTAMP'"); // supported range is '1970-01-01 00:00:01.000000' UTC to '2038-01-19 03:14:07.999999' UTC
+            query.append("  THEN 19");
         }
 
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='YEAR' THEN 4");
+        query.append(" WHEN UPPER(DATA_TYPE)='YEAR' THEN 4");
         if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
-            sqlBuf.append(
+            query.append(
                     " WHEN UPPER(DATA_TYPE)='TINYINT' AND LOCATE('ZEROFILL', UPPER(COLUMN_TYPE)) = 0 AND LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) = 0 AND LOCATE('(1)', COLUMN_TYPE) != 0 THEN 1");
         }
         // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) != 0 THEN 8");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
+        query.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(COLUMN_TYPE)) != 0 THEN 8");
+        query.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
 
         // spatial data types
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMETRY' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 65535");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMETRY' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 65535");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 65535");
 
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION");
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH > ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" THEN ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_MAXIMUM_LENGTH");
-        sqlBuf.append(" END) AS COLUMN_SIZE,");
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION");
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH > ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" THEN ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_MAXIMUM_LENGTH");
+        query.append(" END) AS COLUMN_SIZE,");
 
-        sqlBuf.append(maxBufferSize);
-        sqlBuf.append(" AS BUFFER_LENGTH,");
+        query.append(maxBufferSize);
+        query.append(" AS BUFFER_LENGTH,");
 
-        sqlBuf.append("UPPER(CASE");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='DECIMAL' THEN NUMERIC_SCALE");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='FLOAT' OR UPPER(DATA_TYPE)='DOUBLE' THEN");
-        sqlBuf.append(" CASE WHEN NUMERIC_SCALE IS NULL THEN 0");
-        sqlBuf.append(" ELSE NUMERIC_SCALE END");
-        sqlBuf.append(" ELSE NULL END) AS DECIMAL_DIGITS,");
+        query.append("UPPER(CASE");
+        query.append(" WHEN UPPER(DATA_TYPE)='DECIMAL' THEN NUMERIC_SCALE");
+        query.append(" WHEN UPPER(DATA_TYPE)='FLOAT' OR UPPER(DATA_TYPE)='DOUBLE' THEN");
+        query.append(" CASE WHEN NUMERIC_SCALE IS NULL THEN 0");
+        query.append(" ELSE NUMERIC_SCALE END");
+        query.append(" ELSE NULL END) AS DECIMAL_DIGITS,");
 
-        sqlBuf.append("10 AS NUM_PREC_RADIX,");
+        query.append("10 AS NUM_PREC_RADIX,");
 
-        sqlBuf.append("CASE");
-        sqlBuf.append(" WHEN IS_NULLABLE='NO' THEN ");
-        sqlBuf.append(columnNoNulls);
-        sqlBuf.append(" ELSE CASE WHEN IS_NULLABLE='YES' THEN ");
-        sqlBuf.append(columnNullable);
-        sqlBuf.append(" ELSE ");
-        sqlBuf.append(columnNullableUnknown);
-        sqlBuf.append(" END END AS NULLABLE,");
+        query.append("CASE");
+        query.append(" WHEN IS_NULLABLE='NO' THEN ");
+        query.append(columnNoNulls);
+        query.append(" ELSE CASE WHEN IS_NULLABLE='YES' THEN ");
+        query.append(columnNullable);
+        query.append(" ELSE ");
+        query.append(columnNullableUnknown);
+        query.append(" END END AS NULLABLE,");
 
-        sqlBuf.append("COLUMN_COMMENT AS REMARKS,");
-        sqlBuf.append("COLUMN_DEFAULT AS COLUMN_DEF,");
-        sqlBuf.append("0 AS SQL_DATA_TYPE,");
-        sqlBuf.append("0 AS SQL_DATETIME_SUB,");
+        query.append("COLUMN_COMMENT AS REMARKS,");
+        query.append("COLUMN_DEFAULT AS COLUMN_DEF,");
+        query.append("0 AS SQL_DATA_TYPE,");
+        query.append("0 AS SQL_DATETIME_SUB,");
 
-        sqlBuf.append("CASE WHEN CHARACTER_OCTET_LENGTH > ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" THEN ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_OCTET_LENGTH END AS CHAR_OCTET_LENGTH,");
+        query.append("CASE WHEN CHARACTER_OCTET_LENGTH > ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" THEN ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_OCTET_LENGTH END AS CHAR_OCTET_LENGTH,");
 
-        sqlBuf.append("ORDINAL_POSITION, IS_NULLABLE, NULL AS SCOPE_CATALOG, NULL AS SCOPE_SCHEMA, NULL AS SCOPE_TABLE, NULL AS SOURCE_DATA_TYPE,");
-        sqlBuf.append("IF (EXTRA LIKE '%auto_increment%','YES','NO') AS IS_AUTOINCREMENT, ");
-        sqlBuf.append("IF (EXTRA LIKE '%GENERATED%','YES','NO') AS IS_GENERATEDCOLUMN ");
+        query.append("ORDINAL_POSITION, IS_NULLABLE, NULL AS SCOPE_CATALOG, NULL AS SCOPE_SCHEMA, NULL AS SCOPE_TABLE, NULL AS SOURCE_DATA_TYPE,");
+        query.append("IF (EXTRA LIKE '%auto_increment%','YES','NO') AS IS_AUTOINCREMENT, ");
+        query.append("IF (EXTRA LIKE '%GENERATED%','YES','NO') AS IS_GENERATEDCOLUMN ");
 
-        sqlBuf.append("FROM INFORMATION_SCHEMA.COLUMNS");
+        query.append("FROM INFORMATION_SCHEMA.COLUMNS");
 
-        StringBuilder conditionBuf = new StringBuilder();
+        StringBuilder condition = new StringBuilder();
 
-        if (db != null) {
-            conditionBuf.append("information_schema".equalsIgnoreCase(db) || "performance_schema".equalsIgnoreCase(db) || !StringUtils.hasWildcards(db)
-                    || this.databaseTerm.getValue() == DatabaseTerm.CATALOG ? " TABLE_SCHEMA = ?" : " TABLE_SCHEMA LIKE ?");
+        if (dbFilter != null) {
+            condition.append(dbMapsToSchema && StringUtils.hasWildcards(dbFilter) ? " TABLE_SCHEMA LIKE ?" : " TABLE_SCHEMA = ?");
         }
-        if (tableName != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
+        if (tableNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
             }
-            conditionBuf.append(StringUtils.hasWildcards(tableName) ? " TABLE_NAME LIKE ?" : " TABLE_NAME = ?");
+            condition.append(StringUtils.hasWildcards(tableNameFilter) ? " TABLE_NAME LIKE ?" : " TABLE_NAME = ?");
         }
-        if (columnNamePattern != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
+        if (columnNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
             }
-            conditionBuf.append(StringUtils.hasWildcards(columnNamePattern) ? " COLUMN_NAME LIKE ?" : " COLUMN_NAME = ?");
+            condition.append(StringUtils.hasWildcards(columnNameFilter) ? " COLUMN_NAME LIKE ?" : " COLUMN_NAME = ?");
         }
 
-        if (conditionBuf.length() > 0) {
-            sqlBuf.append(" WHERE");
+        if (condition.length() > 0) {
+            query.append(" WHERE");
         }
-        sqlBuf.append(conditionBuf);
-        sqlBuf.append(" ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION");
+        query.append(condition);
+        query.append(" ORDER BY TABLE_SCHEMA, TABLE_NAME, ORDINAL_POSITION");
 
-        java.sql.PreparedStatement pStmt = null;
-
+        PreparedStatement pStmt = null;
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
 
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
-            if (tableName != null) {
-                pStmt.setString(nextId++, tableName);
+            if (tableNameFilter != null) {
+                pStmt.setString(nextId++, tableNameFilter);
             }
-            if (columnNamePattern != null) {
-                pStmt.setString(nextId, columnNamePattern);
+            if (columnNameFilter != null) {
+                pStmt.setString(nextId, columnNameFilter);
             }
 
             ResultSet rs = executeMetadataQuery(pStmt);
-
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createColumnsFields());
             return rs;
         } finally {
@@ -282,52 +281,52 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public java.sql.ResultSet getCrossReference(String primaryCatalog, String primarySchema, String primaryTable, String foreignCatalog, String foreignSchema,
+    public ResultSet getCrossReference(String primaryCatalog, String primarySchema, String primaryTable, String foreignCatalog, String foreignSchema,
             String foreignTable) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (primaryTable == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
         String primaryDb = getDatabase(primaryCatalog, primarySchema);
-        String foreignDb = getDatabase(foreignCatalog, foreignSchema);
-
         primaryDb = this.pedantic ? primaryDb : StringUtils.unQuoteIdentifier(primaryDb, this.quotedId);
+        String foreignDb = getDatabase(foreignCatalog, foreignSchema);
         foreignDb = this.pedantic ? foreignDb : StringUtils.unQuoteIdentifier(foreignDb, this.quotedId);
 
-        StringBuilder sqlBuf = new StringBuilder(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA
-                ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
-                : "SELECT DISTINCT A.REFERENCED_TABLE_SCHEMA AS PKTABLE_CAT,NULL AS PKTABLE_SCHEM,");
-        sqlBuf.append(" A.REFERENCED_TABLE_NAME AS PKTABLE_NAME, A.REFERENCED_COLUMN_NAME AS PKCOLUMN_NAME,");
-        sqlBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " A.TABLE_CATALOG AS FKTABLE_CAT, A.TABLE_SCHEMA AS FKTABLE_SCHEM,"
+        StringBuilder query = new StringBuilder(
+                dbMapsToSchema ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
+                        : "SELECT DISTINCT A.REFERENCED_TABLE_SCHEMA AS PKTABLE_CAT,NULL AS PKTABLE_SCHEM,");
+        query.append(" A.REFERENCED_TABLE_NAME AS PKTABLE_NAME, A.REFERENCED_COLUMN_NAME AS PKCOLUMN_NAME,");
+        query.append(dbMapsToSchema ? " A.TABLE_CATALOG AS FKTABLE_CAT, A.TABLE_SCHEMA AS FKTABLE_SCHEM,"
                 : " A.TABLE_SCHEMA AS FKTABLE_CAT, NULL AS FKTABLE_SCHEM,");
-        sqlBuf.append(" A.TABLE_NAME AS FKTABLE_NAME, A.COLUMN_NAME AS FKCOLUMN_NAME, A.ORDINAL_POSITION AS KEY_SEQ,");
-        sqlBuf.append(generateUpdateRuleClause());
-        sqlBuf.append(" AS UPDATE_RULE,");
-        sqlBuf.append(generateDeleteRuleClause());
-        sqlBuf.append(" AS DELETE_RULE, A.CONSTRAINT_NAME AS FK_NAME, TC.CONSTRAINT_NAME AS PK_NAME,");
-        sqlBuf.append(importedKeyNotDeferrable);
-        sqlBuf.append(" AS DEFERRABILITY FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE A");
-        sqlBuf.append(" JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS B USING (TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME) ");
-        sqlBuf.append(generateOptionalRefContraintsJoin());
-        sqlBuf.append(" LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS TC ON (A.REFERENCED_TABLE_SCHEMA = TC.TABLE_SCHEMA");
-        sqlBuf.append("  AND A.REFERENCED_TABLE_NAME = TC.TABLE_NAME");
-        sqlBuf.append("  AND TC.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY'))");
-        sqlBuf.append("WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
+        query.append(" A.TABLE_NAME AS FKTABLE_NAME, A.COLUMN_NAME AS FKCOLUMN_NAME, A.ORDINAL_POSITION AS KEY_SEQ,");
+        query.append(generateUpdateRuleClause());
+        query.append(" AS UPDATE_RULE,");
+        query.append(generateDeleteRuleClause());
+        query.append(" AS DELETE_RULE, A.CONSTRAINT_NAME AS FK_NAME, TC.CONSTRAINT_NAME AS PK_NAME,");
+        query.append(importedKeyNotDeferrable);
+        query.append(" AS DEFERRABILITY FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE A");
+        query.append(" JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS B USING (TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME) ");
+        query.append(generateOptionalRefContraintsJoin());
+        query.append(" LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS TC ON (A.REFERENCED_TABLE_SCHEMA = TC.TABLE_SCHEMA");
+        query.append("  AND A.REFERENCED_TABLE_NAME = TC.TABLE_NAME");
+        query.append("  AND TC.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY'))");
+        query.append("WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
         if (primaryDb != null) {
-            sqlBuf.append(" AND A.REFERENCED_TABLE_SCHEMA=?");
+            query.append(" AND A.REFERENCED_TABLE_SCHEMA=?");
         }
-        sqlBuf.append(" AND A.REFERENCED_TABLE_NAME=?");
+        query.append(" AND A.REFERENCED_TABLE_NAME=?");
         if (foreignDb != null) {
-            sqlBuf.append(" AND A.TABLE_SCHEMA = ?");
+            query.append(" AND A.TABLE_SCHEMA = ?");
         }
-        sqlBuf.append(" AND A.TABLE_NAME=?");
-        sqlBuf.append(" ORDER BY FKTABLE_NAME, FKTABLE_NAME, KEY_SEQ");
+        query.append(" AND A.TABLE_NAME=?");
+        query.append(" ORDER BY FKTABLE_NAME, FKTABLE_NAME, KEY_SEQ");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
             if (primaryDb != null) {
                 pStmt.setString(nextId++, primaryDb);
@@ -350,49 +349,49 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public java.sql.ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
+    public ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (table == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String db = getDatabase(catalog, schema);
+        String dbFilter = getDatabase(catalog, schema);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA
-                ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
-                : "SELECT DISTINCT A.REFERENCED_TABLE_SCHEMA AS PKTABLE_CAT,NULL AS PKTABLE_SCHEM,");
-        sqlBuf.append(" A.REFERENCED_TABLE_NAME AS PKTABLE_NAME, A.REFERENCED_COLUMN_NAME AS PKCOLUMN_NAME,");
-        sqlBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " A.TABLE_CATALOG AS FKTABLE_CAT, A.TABLE_SCHEMA AS FKTABLE_SCHEM,"
+        StringBuilder query = new StringBuilder(
+                dbMapsToSchema ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
+                        : "SELECT DISTINCT A.REFERENCED_TABLE_SCHEMA AS PKTABLE_CAT,NULL AS PKTABLE_SCHEM,");
+        query.append(" A.REFERENCED_TABLE_NAME AS PKTABLE_NAME, A.REFERENCED_COLUMN_NAME AS PKCOLUMN_NAME,");
+        query.append(dbMapsToSchema ? " A.TABLE_CATALOG AS FKTABLE_CAT, A.TABLE_SCHEMA AS FKTABLE_SCHEM,"
                 : " A.TABLE_SCHEMA AS FKTABLE_CAT, NULL AS FKTABLE_SCHEM,");
-        sqlBuf.append(" A.TABLE_NAME AS FKTABLE_NAME, A.COLUMN_NAME AS FKCOLUMN_NAME, A.ORDINAL_POSITION AS KEY_SEQ,");
-        sqlBuf.append(generateUpdateRuleClause());
-        sqlBuf.append(" AS UPDATE_RULE,");
-        sqlBuf.append(generateDeleteRuleClause());
-        sqlBuf.append(" AS DELETE_RULE, A.CONSTRAINT_NAME AS FK_NAME, TC.CONSTRAINT_NAME AS PK_NAME,");
-        sqlBuf.append(importedKeyNotDeferrable);
-        sqlBuf.append(" AS DEFERRABILITY FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE A");
-        sqlBuf.append(" JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS B USING (TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME) ");
-        sqlBuf.append(generateOptionalRefContraintsJoin());
-        sqlBuf.append(" LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS TC ON (A.REFERENCED_TABLE_SCHEMA = TC.TABLE_SCHEMA");
-        sqlBuf.append("  AND A.REFERENCED_TABLE_NAME = TC.TABLE_NAME");
-        sqlBuf.append("  AND TC.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY'))");
-        sqlBuf.append(" WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
-        if (db != null) {
-            sqlBuf.append(" AND A.REFERENCED_TABLE_SCHEMA = ?");
+        query.append(" A.TABLE_NAME AS FKTABLE_NAME, A.COLUMN_NAME AS FKCOLUMN_NAME, A.ORDINAL_POSITION AS KEY_SEQ,");
+        query.append(generateUpdateRuleClause());
+        query.append(" AS UPDATE_RULE,");
+        query.append(generateDeleteRuleClause());
+        query.append(" AS DELETE_RULE, A.CONSTRAINT_NAME AS FK_NAME, TC.CONSTRAINT_NAME AS PK_NAME,");
+        query.append(importedKeyNotDeferrable);
+        query.append(" AS DEFERRABILITY FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE A");
+        query.append(" JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS B USING (TABLE_SCHEMA, TABLE_NAME, CONSTRAINT_NAME) ");
+        query.append(generateOptionalRefContraintsJoin());
+        query.append(" LEFT JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS TC ON (A.REFERENCED_TABLE_SCHEMA = TC.TABLE_SCHEMA");
+        query.append("  AND A.REFERENCED_TABLE_NAME = TC.TABLE_NAME");
+        query.append("  AND TC.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY'))");
+        query.append(" WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
+        if (dbFilter != null) {
+            query.append(" AND A.REFERENCED_TABLE_SCHEMA = ?");
         }
-        sqlBuf.append(" AND A.REFERENCED_TABLE_NAME=?");
-        sqlBuf.append(" ORDER BY FKTABLE_NAME, FKTABLE_NAME, KEY_SEQ");
+        query.append(" AND A.REFERENCED_TABLE_NAME=?");
+        query.append(" ORDER BY FKTABLE_NAME, FKTABLE_NAME, KEY_SEQ");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
 
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
             pStmt.setString(nextId, table);
 
@@ -428,46 +427,46 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public java.sql.ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
+    public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (table == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String db = getDatabase(catalog, schema);
+        String dbFilter = getDatabase(catalog, schema);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA
-                ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
-                : "SELECT DISTINCT A.REFERENCED_TABLE_SCHEMA AS PKTABLE_CAT,NULL AS PKTABLE_SCHEM,");
-        sqlBuf.append(" A.REFERENCED_TABLE_NAME AS PKTABLE_NAME, A.REFERENCED_COLUMN_NAME AS PKCOLUMN_NAME,");
-        sqlBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " A.TABLE_CATALOG AS FKTABLE_CAT, A.TABLE_SCHEMA AS FKTABLE_SCHEM,"
+        StringBuilder query = new StringBuilder(
+                dbMapsToSchema ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
+                        : "SELECT DISTINCT A.REFERENCED_TABLE_SCHEMA AS PKTABLE_CAT,NULL AS PKTABLE_SCHEM,");
+        query.append(" A.REFERENCED_TABLE_NAME AS PKTABLE_NAME, A.REFERENCED_COLUMN_NAME AS PKCOLUMN_NAME,");
+        query.append(dbMapsToSchema ? " A.TABLE_CATALOG AS FKTABLE_CAT, A.TABLE_SCHEMA AS FKTABLE_SCHEM,"
                 : " A.TABLE_SCHEMA AS FKTABLE_CAT, NULL AS FKTABLE_SCHEM,");
-        sqlBuf.append(" A.TABLE_NAME AS FKTABLE_NAME, A.COLUMN_NAME AS FKCOLUMN_NAME, A.ORDINAL_POSITION AS KEY_SEQ,");
-        sqlBuf.append(generateUpdateRuleClause());
-        sqlBuf.append(" AS UPDATE_RULE,");
-        sqlBuf.append(generateDeleteRuleClause());
-        sqlBuf.append(" AS DELETE_RULE, A.CONSTRAINT_NAME AS FK_NAME, R.UNIQUE_CONSTRAINT_NAME AS PK_NAME,");
-        sqlBuf.append(importedKeyNotDeferrable);
-        sqlBuf.append(" AS DEFERRABILITY FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE A");
-        sqlBuf.append(" JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS B USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_NAME) ");
-        sqlBuf.append(generateOptionalRefContraintsJoin());
-        sqlBuf.append("WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
-        if (db != null) {
-            sqlBuf.append(" AND A.TABLE_SCHEMA = ?");
+        query.append(" A.TABLE_NAME AS FKTABLE_NAME, A.COLUMN_NAME AS FKCOLUMN_NAME, A.ORDINAL_POSITION AS KEY_SEQ,");
+        query.append(generateUpdateRuleClause());
+        query.append(" AS UPDATE_RULE,");
+        query.append(generateDeleteRuleClause());
+        query.append(" AS DELETE_RULE, A.CONSTRAINT_NAME AS FK_NAME, R.UNIQUE_CONSTRAINT_NAME AS PK_NAME,");
+        query.append(importedKeyNotDeferrable);
+        query.append(" AS DEFERRABILITY FROM INFORMATION_SCHEMA.KEY_COLUMN_USAGE A");
+        query.append(" JOIN INFORMATION_SCHEMA.TABLE_CONSTRAINTS B USING (CONSTRAINT_SCHEMA, CONSTRAINT_NAME, TABLE_NAME) ");
+        query.append(generateOptionalRefContraintsJoin());
+        query.append("WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
+        if (dbFilter != null) {
+            query.append(" AND A.TABLE_SCHEMA = ?");
         }
-        sqlBuf.append(" AND A.TABLE_NAME=?");
-        sqlBuf.append(" AND A.REFERENCED_TABLE_SCHEMA IS NOT NULL");
-        sqlBuf.append(" ORDER BY A.REFERENCED_TABLE_SCHEMA, A.REFERENCED_TABLE_NAME, A.ORDINAL_POSITION");
+        query.append(" AND A.TABLE_NAME=?");
+        query.append(" AND A.REFERENCED_TABLE_SCHEMA IS NOT NULL");
+        query.append(" ORDER BY A.REFERENCED_TABLE_SCHEMA, A.REFERENCED_TABLE_NAME, A.ORDINAL_POSITION");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
             pStmt.setString(nextId, table);
 
@@ -485,35 +484,34 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique, boolean approximate) throws SQLException {
-        String db = getDatabase(catalog, schema);
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schema);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM,"
-                        : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
-        sqlBuf.append(" TABLE_NAME, NON_UNIQUE, NULL AS INDEX_QUALIFIER, INDEX_NAME,");
-        sqlBuf.append(tableIndexOther);
-        sqlBuf.append(" AS TYPE, SEQ_IN_INDEX AS ORDINAL_POSITION, COLUMN_NAME,");
-        sqlBuf.append("COLLATION AS ASC_OR_DESC, CARDINALITY, 0 AS PAGES, NULL AS FILTER_CONDITION FROM INFORMATION_SCHEMA.STATISTICS WHERE");
-        if (db != null) {
-            sqlBuf.append(" TABLE_SCHEMA = ? AND");
+        StringBuilder query = new StringBuilder(
+                dbMapsToSchema ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM," : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
+        query.append(" TABLE_NAME, NON_UNIQUE, NULL AS INDEX_QUALIFIER, INDEX_NAME,");
+        query.append(tableIndexOther);
+        query.append(" AS TYPE, SEQ_IN_INDEX AS ORDINAL_POSITION, COLUMN_NAME,");
+        query.append("COLLATION AS ASC_OR_DESC, CARDINALITY, 0 AS PAGES, NULL AS FILTER_CONDITION FROM INFORMATION_SCHEMA.STATISTICS WHERE");
+        if (dbFilter != null) {
+            query.append(" TABLE_SCHEMA = ? AND");
         }
-        sqlBuf.append(" TABLE_NAME = ?");
+        query.append(" TABLE_NAME = ?");
 
         if (unique) {
-            sqlBuf.append(" AND NON_UNIQUE=0 ");
+            query.append(" AND NON_UNIQUE=0 ");
         }
-        sqlBuf.append(" ORDER BY NON_UNIQUE, INDEX_NAME, SEQ_IN_INDEX");
+        query.append(" ORDER BY NON_UNIQUE, INDEX_NAME, SEQ_IN_INDEX");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
 
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
             pStmt.setString(nextId, table);
 
@@ -530,33 +528,32 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public java.sql.ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
+    public ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (table == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String db = getDatabase(catalog, schema);
+        String dbFilter = getDatabase(catalog, schema);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM,"
-                        : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
-        sqlBuf.append(" TABLE_NAME, COLUMN_NAME, SEQ_IN_INDEX AS KEY_SEQ, 'PRIMARY' AS PK_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE");
-        if (db != null) {
-            sqlBuf.append(" TABLE_SCHEMA = ? AND");
+        StringBuilder query = new StringBuilder(
+                dbMapsToSchema ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM," : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
+        query.append(" TABLE_NAME, COLUMN_NAME, SEQ_IN_INDEX AS KEY_SEQ, 'PRIMARY' AS PK_NAME FROM INFORMATION_SCHEMA.STATISTICS WHERE");
+        if (dbFilter != null) {
+            query.append(" TABLE_SCHEMA = ? AND");
         }
-        sqlBuf.append(" TABLE_NAME = ?");
-        sqlBuf.append(" AND INDEX_NAME='PRIMARY' ORDER BY TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, SEQ_IN_INDEX");
+        query.append(" TABLE_NAME = ?");
+        query.append(" AND INDEX_NAME='PRIMARY' ORDER BY TABLE_SCHEMA, TABLE_NAME, COLUMN_NAME, SEQ_IN_INDEX");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
             pStmt.setString(nextId, table);
 
@@ -572,281 +569,49 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public ResultSet getProcedures(String catalog, String schemaPattern, String procedureNamePattern) throws SQLException {
-        String db = getDatabase(catalog, schemaPattern);
-
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT ROUTINE_CATALOG AS PROCEDURE_CAT, ROUTINE_SCHEMA AS PROCEDURE_SCHEM,"
-                        : "SELECT ROUTINE_SCHEMA AS PROCEDURE_CAT, NULL AS PROCEDURE_SCHEM,");
-        sqlBuf.append(
-                " ROUTINE_NAME AS PROCEDURE_NAME, NULL AS RESERVED_1, NULL AS RESERVED_2, NULL AS RESERVED_3, ROUTINE_COMMENT AS REMARKS, CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN ");
-        sqlBuf.append(procedureNoResult);
-        sqlBuf.append(" WHEN ROUTINE_TYPE='FUNCTION' THEN ");
-        sqlBuf.append(procedureReturnsResult);
-        sqlBuf.append(" ELSE ");
-        sqlBuf.append(procedureResultUnknown);
-        sqlBuf.append(" END AS PROCEDURE_TYPE, ROUTINE_NAME AS SPECIFIC_NAME FROM INFORMATION_SCHEMA.ROUTINES");
-
-        StringBuilder conditionBuf = new StringBuilder();
-        if (!this.conn.getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue()) {
-            conditionBuf.append(" ROUTINE_TYPE = 'PROCEDURE'");
-        }
-        if (db != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
-            }
-            conditionBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " ROUTINE_SCHEMA LIKE ?" : " ROUTINE_SCHEMA = ?");
-        }
-        if (procedureNamePattern != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
-            }
-            conditionBuf.append(" ROUTINE_NAME LIKE ?");
-        }
-
-        if (conditionBuf.length() > 0) {
-            sqlBuf.append(" WHERE");
-            sqlBuf.append(conditionBuf);
-        }
-        sqlBuf.append(" ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE");
-
-        java.sql.PreparedStatement pStmt = null;
-
-        try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
-            int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
-            }
-            if (procedureNamePattern != null) {
-                pStmt.setString(nextId, procedureNamePattern);
-            }
-
-            ResultSet rs = executeMetadataQuery(pStmt);
-            ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFieldMetadataForGetProcedures());
-
-            return rs;
-        } finally {
-            if (pStmt != null) {
-                pStmt.close();
-            }
-        }
-    }
-
-    @Override
-    public ResultSet getProcedureColumns(String catalog, String schemaPattern, String procedureNamePattern, String columnNamePattern) throws SQLException {
-        String db = getDatabase(catalog, schemaPattern);
-
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-        boolean supportsFractSeconds = this.conn.getServerVersion().meetsMinimum(ServerVersion.parseVersion("5.6.4"));
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT SPECIFIC_CATALOG AS PROCEDURE_CAT, SPECIFIC_SCHEMA AS `PROCEDURE_SCHEM`,"
-                        : "SELECT SPECIFIC_SCHEMA AS PROCEDURE_CAT, NULL AS `PROCEDURE_SCHEM`,");
-        sqlBuf.append(" SPECIFIC_NAME AS `PROCEDURE_NAME`, IFNULL(PARAMETER_NAME, '') AS `COLUMN_NAME`,");
-        sqlBuf.append(" CASE WHEN PARAMETER_MODE = 'IN' THEN ");
-        sqlBuf.append(procedureColumnIn);
-        sqlBuf.append(" WHEN PARAMETER_MODE = 'OUT' THEN ");
-        sqlBuf.append(procedureColumnOut);
-        sqlBuf.append(" WHEN PARAMETER_MODE = 'INOUT' THEN ");
-        sqlBuf.append(procedureColumnInOut);
-        sqlBuf.append(" WHEN ORDINAL_POSITION = 0 THEN ");
-        sqlBuf.append(procedureColumnReturn);
-        sqlBuf.append(" ELSE ");
-        sqlBuf.append(procedureColumnUnknown);
-        sqlBuf.append(" END AS `COLUMN_TYPE`, ");
-        appendJdbcTypeMappingQuery(sqlBuf, "DATA_TYPE", "DTD_IDENTIFIER");
-        sqlBuf.append(" AS `DATA_TYPE`, ");
-
-        sqlBuf.append("UPPER(CASE");
-        if (this.tinyInt1isBit) {
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='TINYINT' THEN CASE");
-            sqlBuf.append(
-                    " WHEN LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN ");
-            sqlBuf.append(this.transformedBitIsBoolean ? "'BOOLEAN'" : "'BIT'");
-            sqlBuf.append(" WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 THEN 'TINYINT UNSIGNED'");
-            sqlBuf.append(" ELSE DATA_TYPE END ");
-        }
-        sqlBuf.append(
-                " WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 AND LOCATE('SET', UPPER(DATA_TYPE)) <> 1 AND LOCATE('ENUM', UPPER(DATA_TYPE)) <> 1 THEN CONCAT(DATA_TYPE, ' UNSIGNED')");
-
-        // spatial data types
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 'GEOMETRY'");
-
-        sqlBuf.append(" ELSE UPPER(DATA_TYPE) END) AS TYPE_NAME,");
-
-        // PRECISION
-        sqlBuf.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 0");
-        if (supportsFractSeconds) {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN DATETIME_PRECISION");
-        } else {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 0");
-        }
-        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
-            sqlBuf.append(
-                    " WHEN (UPPER(DATA_TYPE)='TINYINT' AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0) AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
-        }
-        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
-        sqlBuf.append(" ELSE NUMERIC_PRECISION END AS `PRECISION`,"); //
-
-        // LENGTH
-        sqlBuf.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 10");
-        if (supportsFractSeconds) {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp'");
-            sqlBuf.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
-        } else {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8");
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 19");
-        }
-        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
-            sqlBuf.append(
-                    " WHEN (UPPER(DATA_TYPE)='TINYINT' OR UPPER(DATA_TYPE)='TINYINT UNSIGNED') AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
-        }
-        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION");
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH > ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" THEN ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_MAXIMUM_LENGTH END AS LENGTH,"); //
-
-        sqlBuf.append("NUMERIC_SCALE AS `SCALE`, ");
-        sqlBuf.append("10 AS RADIX,");
-        sqlBuf.append(procedureNullable);
-        sqlBuf.append(" AS `NULLABLE`, NULL AS `REMARKS`, NULL AS `COLUMN_DEF`, NULL AS `SQL_DATA_TYPE`, NULL AS `SQL_DATETIME_SUB`,");
-
-        sqlBuf.append(" CASE WHEN CHARACTER_OCTET_LENGTH > ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" THEN ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_OCTET_LENGTH END AS `CHAR_OCTET_LENGTH`,"); //
-
-        sqlBuf.append(" ORDINAL_POSITION, 'YES' AS `IS_NULLABLE`, SPECIFIC_NAME");
-        sqlBuf.append(" FROM INFORMATION_SCHEMA.PARAMETERS");
-
-        StringBuilder conditionBuf = new StringBuilder();
-        if (!this.conn.getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue()) {
-            conditionBuf.append(" ROUTINE_TYPE = 'PROCEDURE'");
-        }
-        if (db != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
-            }
-            conditionBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " SPECIFIC_SCHEMA LIKE ?" : " SPECIFIC_SCHEMA = ?");
-        }
-        if (procedureNamePattern != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
-            }
-            conditionBuf.append(" SPECIFIC_NAME LIKE ?");
-        }
-        if (columnNamePattern != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
-            }
-            conditionBuf.append(" (PARAMETER_NAME LIKE ? OR PARAMETER_NAME IS NULL)");
-        }
-
-        if (conditionBuf.length() > 0) {
-            sqlBuf.append(" WHERE");
-            sqlBuf.append(conditionBuf);
-        }
-        sqlBuf.append(" ORDER BY SPECIFIC_SCHEMA, SPECIFIC_NAME, ROUTINE_TYPE, ORDINAL_POSITION");
-
-        java.sql.PreparedStatement pStmt = null;
-
-        try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
-
-            int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
-            }
-            if (procedureNamePattern != null) {
-                pStmt.setString(nextId++, procedureNamePattern);
-            }
-            if (columnNamePattern != null) {
-                pStmt.setString(nextId, columnNamePattern);
-            }
-
-            ResultSet rs = executeMetadataQuery(pStmt);
-            ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createProcedureColumnsFields());
-
-            return rs;
-        } finally {
-            if (pStmt != null) {
-                pStmt.close();
-            }
-        }
-    }
-
-    @Override
     public ResultSet getTables(String catalog, String schemaPattern, String tableNamePattern, String[] types) throws SQLException {
-        String db = getDatabase(catalog, schemaPattern);
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schemaPattern);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String tableNameFilter = this.pedantic ? tableNamePattern : StringUtils.unQuoteIdentifier(tableNamePattern, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
+        PreparedStatement pStmt = null;
 
-        if (tableNamePattern != null) {
-            List<String> parseList = StringUtils.splitDBdotName(tableNamePattern, db, this.quotedId, this.session.getServerSession().isNoBackslashEscapesSet());
-            //There *should* be 2 rows, if any.
-            if (parseList.size() == 2) {
-                tableNamePattern = parseList.get(1);
-            }
-        }
-
-        java.sql.PreparedStatement pStmt = null;
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM,"
-                        : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
-        sqlBuf.append(
+        StringBuilder query = new StringBuilder(
+                dbMapsToSchema ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM," : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
+        query.append(
                 " TABLE_NAME, CASE WHEN TABLE_TYPE='BASE TABLE' THEN CASE WHEN TABLE_SCHEMA = 'mysql' OR TABLE_SCHEMA = 'performance_schema' THEN 'SYSTEM TABLE' ");
-        sqlBuf.append("ELSE 'TABLE' END WHEN TABLE_TYPE='TEMPORARY' THEN 'LOCAL_TEMPORARY' ELSE TABLE_TYPE END AS TABLE_TYPE, ");
-        sqlBuf.append("TABLE_COMMENT AS REMARKS, NULL AS TYPE_CAT, NULL AS TYPE_SCHEM, NULL AS TYPE_NAME, NULL AS SELF_REFERENCING_COL_NAME, ");
-        sqlBuf.append("NULL AS REF_GENERATION FROM INFORMATION_SCHEMA.TABLES");
+        query.append("ELSE 'TABLE' END WHEN TABLE_TYPE='TEMPORARY' THEN 'LOCAL_TEMPORARY' ELSE TABLE_TYPE END AS TABLE_TYPE, ");
+        query.append("TABLE_COMMENT AS REMARKS, NULL AS TYPE_CAT, NULL AS TYPE_SCHEM, NULL AS TYPE_NAME, NULL AS SELF_REFERENCING_COL_NAME, ");
+        query.append("NULL AS REF_GENERATION FROM INFORMATION_SCHEMA.TABLES");
 
-        if (db != null || tableNamePattern != null) {
-            sqlBuf.append(" WHERE");
+        if (dbFilter != null || tableNameFilter != null) {
+            query.append(" WHERE");
         }
 
-        if (db != null) {
-            sqlBuf.append("information_schema".equalsIgnoreCase(db) || "performance_schema".equalsIgnoreCase(db) || !StringUtils.hasWildcards(db)
-                    || this.databaseTerm.getValue() == DatabaseTerm.CATALOG ? " TABLE_SCHEMA = ?" : " TABLE_SCHEMA LIKE ?");
+        if (dbFilter != null) {
+            query.append(dbMapsToSchema && StringUtils.hasWildcards(dbFilter) ? " TABLE_SCHEMA LIKE ?" : " TABLE_SCHEMA = ?");
         }
 
-        if (tableNamePattern != null) {
-            if (db != null) {
-                sqlBuf.append(" AND");
+        if (tableNameFilter != null) {
+            if (dbFilter != null) {
+                query.append(" AND");
             }
-            sqlBuf.append(StringUtils.hasWildcards(tableNamePattern) ? " TABLE_NAME LIKE ?" : " TABLE_NAME = ?");
+            query.append(StringUtils.hasWildcards(tableNameFilter) ? " TABLE_NAME LIKE ?" : " TABLE_NAME = ?");
         }
         if (types != null && types.length > 0) {
-            sqlBuf.append(" HAVING TABLE_TYPE IN (?,?,?,?,?)");
+            query.append(" HAVING TABLE_TYPE IN (?,?,?,?,?)");
         }
-        sqlBuf.append(" ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME");
+        query.append(" ORDER BY TABLE_TYPE, TABLE_SCHEMA, TABLE_NAME");
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
 
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db != null ? db : "%");
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter != null ? dbFilter : "%");
             }
-            if (tableNamePattern != null) {
-                pStmt.setString(nextId++, tableNamePattern);
+            if (tableNameFilter != null) {
+                pStmt.setString(nextId++, tableNameFilter);
             }
 
             if (types != null && types.length > 0) {
@@ -862,9 +627,7 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             }
 
             ResultSet rs = executeMetadataQuery(pStmt);
-
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).setColumnDefinition(createTablesFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -880,45 +643,44 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
                     getExceptionInterceptor());
         }
 
-        String db = getDatabase(catalog, schema);
+        String dbFilter = getDatabase(catalog, schema);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder("SELECT NULL AS SCOPE, COLUMN_NAME, ");
-        appendJdbcTypeMappingQuery(sqlBuf, "DATA_TYPE", "COLUMN_TYPE");
-        sqlBuf.append(" AS DATA_TYPE, UPPER(COLUMN_TYPE) AS TYPE_NAME,");
-        sqlBuf.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 10");
+        StringBuilder query = new StringBuilder("SELECT NULL AS SCOPE, COLUMN_NAME, ");
+        appendJdbcTypeMappingQuery(query, "DATA_TYPE", "COLUMN_TYPE");
+        query.append(" AS DATA_TYPE, UPPER(COLUMN_TYPE) AS TYPE_NAME,");
+        query.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 10");
         if (this.conn.getServerVersion().meetsMinimum(ServerVersion.parseVersion("5.6.4"))) {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time'");
-            sqlBuf.append("  THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp'");
-            sqlBuf.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+            query.append(" WHEN LCASE(DATA_TYPE)='time'");
+            query.append("  THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+            query.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp'");
+            query.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
         } else {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8");
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 19");
+            query.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8");
+            query.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 19");
         }
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION WHEN CHARACTER_MAXIMUM_LENGTH > ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" THEN ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_MAXIMUM_LENGTH END AS COLUMN_SIZE, ");
-        sqlBuf.append(maxBufferSize);
-        sqlBuf.append(" AS BUFFER_LENGTH,NUMERIC_SCALE AS DECIMAL_DIGITS, ");
-        sqlBuf.append(Integer.toString(java.sql.DatabaseMetaData.versionColumnNotPseudo));
-        sqlBuf.append(" AS PSEUDO_COLUMN FROM INFORMATION_SCHEMA.COLUMNS WHERE");
-        if (db != null) {
-            sqlBuf.append(" TABLE_SCHEMA = ? AND");
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION WHEN CHARACTER_MAXIMUM_LENGTH > ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" THEN ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_MAXIMUM_LENGTH END AS COLUMN_SIZE, ");
+        query.append(maxBufferSize);
+        query.append(" AS BUFFER_LENGTH,NUMERIC_SCALE AS DECIMAL_DIGITS, ");
+        query.append(Integer.toString(java.sql.DatabaseMetaData.versionColumnNotPseudo));
+        query.append(" AS PSEUDO_COLUMN FROM INFORMATION_SCHEMA.COLUMNS WHERE");
+        if (dbFilter != null) {
+            query.append(" TABLE_SCHEMA = ? AND");
         }
-        sqlBuf.append(" TABLE_NAME = ?");
-        sqlBuf.append(" AND EXTRA LIKE '%on update CURRENT_TIMESTAMP%'");
+        query.append(" TABLE_NAME = ?");
+        query.append(" AND EXTRA LIKE '%on update CURRENT_TIMESTAMP%'");
 
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
             pStmt.setString(nextId, table);
 
@@ -934,147 +696,221 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public ResultSet getFunctionColumns(String catalog, String schemaPattern, String functionNamePattern, String columnNamePattern) throws SQLException {
-        String db = getDatabase(catalog, schemaPattern);
+    public ResultSet getProcedures(String catalog, String schemaPattern, String procedureNamePattern) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schemaPattern);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String procedureNameFilter = this.pedantic ? procedureNamePattern : StringUtils.unQuoteIdentifier(procedureNamePattern, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-        boolean supportsFractSeconds = this.conn.getServerVersion().meetsMinimum(ServerVersion.parseVersion("5.6.4"));
+        StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT ROUTINE_CATALOG AS PROCEDURE_CAT, ROUTINE_SCHEMA AS PROCEDURE_SCHEM,"
+                : "SELECT ROUTINE_SCHEMA AS PROCEDURE_CAT, NULL AS PROCEDURE_SCHEM,");
+        query.append(
+                " ROUTINE_NAME AS PROCEDURE_NAME, NULL AS RESERVED_1, NULL AS RESERVED_2, NULL AS RESERVED_3, ROUTINE_COMMENT AS REMARKS, CASE WHEN ROUTINE_TYPE = 'PROCEDURE' THEN ");
+        query.append(procedureNoResult);
+        query.append(" WHEN ROUTINE_TYPE='FUNCTION' THEN ");
+        query.append(procedureReturnsResult);
+        query.append(" ELSE ");
+        query.append(procedureResultUnknown);
+        query.append(" END AS PROCEDURE_TYPE, ROUTINE_NAME AS SPECIFIC_NAME FROM INFORMATION_SCHEMA.ROUTINES");
 
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT SPECIFIC_CATALOG AS FUNCTION_CAT, SPECIFIC_SCHEMA AS `FUNCTION_SCHEM`,"
-                        : "SELECT SPECIFIC_SCHEMA AS FUNCTION_CAT, NULL AS `FUNCTION_SCHEM`,");
-        sqlBuf.append(" SPECIFIC_NAME AS `FUNCTION_NAME`, IFNULL(PARAMETER_NAME, '') AS `COLUMN_NAME`, CASE WHEN PARAMETER_MODE = 'IN' THEN ");
-        sqlBuf.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_IN));
-        sqlBuf.append(" WHEN PARAMETER_MODE = 'OUT' THEN ");
-        sqlBuf.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_OUT));
-        sqlBuf.append(" WHEN PARAMETER_MODE = 'INOUT' THEN ");
-        sqlBuf.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_INOUT));
-        sqlBuf.append(" WHEN ORDINAL_POSITION = 0 THEN ");
-        sqlBuf.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_RETURN));
-        sqlBuf.append(" ELSE ");
-        sqlBuf.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_UNKNOWN));
-        sqlBuf.append(" END AS `COLUMN_TYPE`, ");
-        appendJdbcTypeMappingQuery(sqlBuf, "DATA_TYPE", "DTD_IDENTIFIER");
-        sqlBuf.append(" AS `DATA_TYPE`, ");
-        sqlBuf.append("UPPER(CASE");
-        if (this.tinyInt1isBit) {
-            sqlBuf.append(" WHEN UPPER(DATA_TYPE)='TINYINT' THEN CASE");
-            sqlBuf.append(
-                    " WHEN LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN ");
-            sqlBuf.append(this.transformedBitIsBoolean ? "'BOOLEAN'" : "'BIT'");
-            sqlBuf.append(" WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 THEN 'TINYINT UNSIGNED'");
-            sqlBuf.append(" ELSE DATA_TYPE END ");
+        StringBuilder condition = new StringBuilder();
+        if (!this.conn.getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue()) {
+            condition.append(" ROUTINE_TYPE = 'PROCEDURE'");
         }
-        sqlBuf.append(
-                " WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 AND LOCATE('SET', UPPER(DATA_TYPE)) <> 1 AND LOCATE('ENUM', UPPER(DATA_TYPE)) <> 1 THEN CONCAT(DATA_TYPE, ' UNSIGNED')");
-
-        // spatial data types
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 'GEOMETRY'");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 'GEOMETRY'");
-
-        sqlBuf.append(" ELSE UPPER(DATA_TYPE) END) AS TYPE_NAME,");
-
-        // PRECISION
-        sqlBuf.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 0");
-        if (supportsFractSeconds) {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN DATETIME_PRECISION");
-        } else {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 0");
-        }
-        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
-            sqlBuf.append(
-                    " WHEN UPPER(DATA_TYPE)='TINYINT' AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
-        }
-        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
-        sqlBuf.append(" ELSE NUMERIC_PRECISION END AS `PRECISION`,"); //
-
-        // LENGTH
-        sqlBuf.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 10");
-        if (supportsFractSeconds) {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp'");
-            sqlBuf.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
-        } else {
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8");
-            sqlBuf.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 19");
-        }
-        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
-            sqlBuf.append(
-                    " WHEN (UPPER(DATA_TYPE)='TINYINT' OR UPPER(DATA_TYPE)='TINYINT UNSIGNED') AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
-        }
-        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
-        sqlBuf.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION");
-        sqlBuf.append(" WHEN CHARACTER_MAXIMUM_LENGTH > " + Integer.MAX_VALUE + " THEN " + Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_MAXIMUM_LENGTH END AS LENGTH, ");
-
-        sqlBuf.append("NUMERIC_SCALE AS `SCALE`, 10 AS RADIX, ");
-        sqlBuf.append(getFunctionConstant(FunctionConstant.FUNCTION_NULLABLE));
-        sqlBuf.append(" AS `NULLABLE`,  NULL AS `REMARKS`,");
-
-        sqlBuf.append(" CASE WHEN CHARACTER_OCTET_LENGTH > ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" THEN ");
-        sqlBuf.append(Integer.MAX_VALUE);
-        sqlBuf.append(" ELSE CHARACTER_OCTET_LENGTH END AS `CHAR_OCTET_LENGTH`,"); //
-
-        sqlBuf.append(" ORDINAL_POSITION, 'YES' AS `IS_NULLABLE`,");
-        sqlBuf.append(" SPECIFIC_NAME FROM INFORMATION_SCHEMA.PARAMETERS WHERE");
-
-        StringBuilder conditionBuf = new StringBuilder();
-        if (db != null) {
-            conditionBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " SPECIFIC_SCHEMA LIKE ?" : " SPECIFIC_SCHEMA = ?");
-        }
-
-        if (functionNamePattern != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
+        if (dbFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
             }
-            conditionBuf.append(" SPECIFIC_NAME LIKE ?");
+            condition.append(dbMapsToSchema ? " ROUTINE_SCHEMA LIKE ?" : " ROUTINE_SCHEMA = ?");
         }
-
-        if (columnNamePattern != null) {
-            if (conditionBuf.length() > 0) {
-                conditionBuf.append(" AND");
+        if (procedureNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
             }
-            conditionBuf.append(" (PARAMETER_NAME LIKE ? OR PARAMETER_NAME IS NULL)");
+            condition.append(" ROUTINE_NAME LIKE ?");
         }
 
-        if (conditionBuf.length() > 0) {
-            conditionBuf.append(" AND");
+        if (condition.length() > 0) {
+            query.append(" WHERE");
+            query.append(condition);
         }
-        conditionBuf.append(" ROUTINE_TYPE='FUNCTION'");
+        query.append(" ORDER BY ROUTINE_SCHEMA, ROUTINE_NAME, ROUTINE_TYPE");
 
-        sqlBuf.append(conditionBuf);
-        sqlBuf.append(" ORDER BY SPECIFIC_SCHEMA, SPECIFIC_NAME, ORDINAL_POSITION");
-
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
-            if (functionNamePattern != null) {
-                pStmt.setString(nextId++, functionNamePattern);
-            }
-            if (columnNamePattern != null) {
-                pStmt.setString(nextId, columnNamePattern);
+            if (procedureNameFilter != null) {
+                pStmt.setString(nextId, procedureNameFilter);
             }
 
             ResultSet rs = executeMetadataQuery(pStmt);
-            ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFunctionColumnsFields());
+            ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFieldMetadataForGetProcedures());
 
+            return rs;
+        } finally {
+            if (pStmt != null) {
+                pStmt.close();
+            }
+        }
+    }
+
+    @Override
+    public ResultSet getProcedureColumns(String catalog, String schemaPattern, String procedureNamePattern, String columnNamePattern) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schemaPattern);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String procedureNameFilter = this.pedantic ? procedureNamePattern : StringUtils.unQuoteIdentifier(procedureNamePattern, this.quotedId);
+        final String columnNameFilter = this.pedantic ? columnNamePattern : StringUtils.unQuoteIdentifier(columnNamePattern, this.quotedId);
+
+        final boolean supportsFractSeconds = this.conn.getServerVersion().meetsMinimum(ServerVersion.parseVersion("5.6.4"));
+
+        StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT SPECIFIC_CATALOG AS PROCEDURE_CAT, SPECIFIC_SCHEMA AS `PROCEDURE_SCHEM`,"
+                : "SELECT SPECIFIC_SCHEMA AS PROCEDURE_CAT, NULL AS `PROCEDURE_SCHEM`,");
+        query.append(" SPECIFIC_NAME AS `PROCEDURE_NAME`, IFNULL(PARAMETER_NAME, '') AS `COLUMN_NAME`,");
+        query.append(" CASE WHEN PARAMETER_MODE = 'IN' THEN ");
+        query.append(procedureColumnIn);
+        query.append(" WHEN PARAMETER_MODE = 'OUT' THEN ");
+        query.append(procedureColumnOut);
+        query.append(" WHEN PARAMETER_MODE = 'INOUT' THEN ");
+        query.append(procedureColumnInOut);
+        query.append(" WHEN ORDINAL_POSITION = 0 THEN ");
+        query.append(procedureColumnReturn);
+        query.append(" ELSE ");
+        query.append(procedureColumnUnknown);
+        query.append(" END AS `COLUMN_TYPE`, ");
+        appendJdbcTypeMappingQuery(query, "DATA_TYPE", "DTD_IDENTIFIER");
+        query.append(" AS `DATA_TYPE`, ");
+
+        query.append("UPPER(CASE");
+        if (this.tinyInt1isBit) {
+            query.append(" WHEN UPPER(DATA_TYPE)='TINYINT' THEN CASE");
+            query.append(
+                    " WHEN LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN ");
+            query.append(this.transformedBitIsBoolean ? "'BOOLEAN'" : "'BIT'");
+            query.append(" WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 THEN 'TINYINT UNSIGNED'");
+            query.append(" ELSE DATA_TYPE END ");
+        }
+        query.append(
+                " WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 AND LOCATE('SET', UPPER(DATA_TYPE)) <> 1 AND LOCATE('ENUM', UPPER(DATA_TYPE)) <> 1 THEN CONCAT(DATA_TYPE, ' UNSIGNED')");
+
+        // spatial data types
+        query.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 'GEOMETRY'");
+
+        query.append(" ELSE UPPER(DATA_TYPE) END) AS TYPE_NAME,");
+
+        // PRECISION
+        query.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 0");
+        if (supportsFractSeconds) {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN DATETIME_PRECISION");
+        } else {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 0");
+        }
+        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
+            query.append(
+                    " WHEN (UPPER(DATA_TYPE)='TINYINT' AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0) AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
+        }
+        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
+        query.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
+        query.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
+        query.append(" ELSE NUMERIC_PRECISION END AS `PRECISION`,"); //
+
+        // LENGTH
+        query.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 10");
+        if (supportsFractSeconds) {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+            query.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp'");
+            query.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+        } else {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8");
+            query.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 19");
+        }
+        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
+            query.append(
+                    " WHEN (UPPER(DATA_TYPE)='TINYINT' OR UPPER(DATA_TYPE)='TINYINT UNSIGNED') AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
+        }
+        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
+        query.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
+        query.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION");
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH > ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" THEN ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_MAXIMUM_LENGTH END AS LENGTH,"); //
+
+        query.append("NUMERIC_SCALE AS `SCALE`, ");
+        query.append("10 AS RADIX,");
+        query.append(procedureNullable);
+        query.append(" AS `NULLABLE`, NULL AS `REMARKS`, NULL AS `COLUMN_DEF`, NULL AS `SQL_DATA_TYPE`, NULL AS `SQL_DATETIME_SUB`,");
+
+        query.append(" CASE WHEN CHARACTER_OCTET_LENGTH > ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" THEN ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_OCTET_LENGTH END AS `CHAR_OCTET_LENGTH`,"); //
+
+        query.append(" ORDINAL_POSITION, 'YES' AS `IS_NULLABLE`, SPECIFIC_NAME");
+        query.append(" FROM INFORMATION_SCHEMA.PARAMETERS");
+
+        StringBuilder condition = new StringBuilder();
+        if (!this.conn.getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue()) {
+            condition.append(" ROUTINE_TYPE = 'PROCEDURE'");
+        }
+        if (dbFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
+            }
+            condition.append(dbMapsToSchema ? " SPECIFIC_SCHEMA LIKE ?" : " SPECIFIC_SCHEMA = ?");
+        }
+        if (procedureNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
+            }
+            condition.append(" SPECIFIC_NAME LIKE ?");
+        }
+        if (columnNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
+            }
+            condition.append(" (PARAMETER_NAME LIKE ? OR PARAMETER_NAME IS NULL)");
+        }
+
+        if (condition.length() > 0) {
+            query.append(" WHERE");
+            query.append(condition);
+        }
+        query.append(" ORDER BY SPECIFIC_SCHEMA, SPECIFIC_NAME, ROUTINE_TYPE, ORDINAL_POSITION");
+
+        PreparedStatement pStmt = null;
+
+        try {
+            pStmt = prepareMetaDataSafeStatement(query.toString());
+
+            int nextId = 1;
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
+            }
+            if (procedureNameFilter != null) {
+                pStmt.setString(nextId++, procedureNameFilter);
+            }
+            if (columnNameFilter != null) {
+                pStmt.setString(nextId, columnNameFilter);
+            }
+
+            ResultSet rs = executeMetadataQuery(pStmt);
+            ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createProcedureColumnsFields());
             return rs;
         } finally {
             if (pStmt != null) {
@@ -1117,42 +953,189 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public java.sql.ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern) throws SQLException {
-        String db = getDatabase(catalog, schemaPattern);
+    public ResultSet getFunctions(String catalog, String schemaPattern, String functionNamePattern) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schemaPattern);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String functionNameFilter = this.pedantic ? functionNamePattern : StringUtils.unQuoteIdentifier(functionNamePattern, this.quotedId);
 
-        db = this.pedantic ? db : StringUtils.unQuoteIdentifier(db, this.quotedId);
-
-        StringBuilder sqlBuf = new StringBuilder(
-                this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? "SELECT ROUTINE_CATALOG AS FUNCTION_CAT, ROUTINE_SCHEMA AS FUNCTION_SCHEM,"
-                        : "SELECT ROUTINE_SCHEMA AS FUNCTION_CAT, NULL AS FUNCTION_SCHEM,");
-        sqlBuf.append(" ROUTINE_NAME AS FUNCTION_NAME, ROUTINE_COMMENT AS REMARKS, ");
-        sqlBuf.append(functionNoTable);
-        sqlBuf.append(" AS FUNCTION_TYPE, ROUTINE_NAME AS SPECIFIC_NAME FROM INFORMATION_SCHEMA.ROUTINES");
-        sqlBuf.append(" WHERE ROUTINE_TYPE LIKE 'FUNCTION'");
-        if (db != null) {
-            sqlBuf.append(this.databaseTerm.getValue() == DatabaseTerm.SCHEMA ? " AND ROUTINE_SCHEMA LIKE ?" : " AND ROUTINE_SCHEMA = ?");
+        StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT ROUTINE_CATALOG AS FUNCTION_CAT, ROUTINE_SCHEMA AS FUNCTION_SCHEM,"
+                : "SELECT ROUTINE_SCHEMA AS FUNCTION_CAT, NULL AS FUNCTION_SCHEM,");
+        query.append(" ROUTINE_NAME AS FUNCTION_NAME, ROUTINE_COMMENT AS REMARKS, ");
+        query.append(functionNoTable);
+        query.append(" AS FUNCTION_TYPE, ROUTINE_NAME AS SPECIFIC_NAME FROM INFORMATION_SCHEMA.ROUTINES");
+        query.append(" WHERE ROUTINE_TYPE LIKE 'FUNCTION'");
+        if (dbFilter != null) {
+            query.append(dbMapsToSchema ? " AND ROUTINE_SCHEMA LIKE ?" : " AND ROUTINE_SCHEMA = ?");
         }
-        if (functionNamePattern != null) {
-            sqlBuf.append(" AND ROUTINE_NAME LIKE ?");
+        if (functionNameFilter != null) {
+            query.append(" AND ROUTINE_NAME LIKE ?");
         }
+        query.append(" ORDER BY FUNCTION_CAT, FUNCTION_SCHEM, FUNCTION_NAME, SPECIFIC_NAME");
 
-        sqlBuf.append(" ORDER BY FUNCTION_CAT, FUNCTION_SCHEM, FUNCTION_NAME, SPECIFIC_NAME");
-
-        java.sql.PreparedStatement pStmt = null;
+        PreparedStatement pStmt = null;
 
         try {
-            pStmt = prepareMetaDataSafeStatement(sqlBuf.toString());
+            pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (db != null) {
-                pStmt.setString(nextId++, db);
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
             }
-            if (functionNamePattern != null) {
-                pStmt.setString(nextId, functionNamePattern);
+            if (functionNameFilter != null) {
+                pStmt.setString(nextId, functionNameFilter);
             }
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(getFunctionsFields());
 
+            return rs;
+        } finally {
+            if (pStmt != null) {
+                pStmt.close();
+            }
+        }
+    }
+
+    @Override
+    public ResultSet getFunctionColumns(String catalog, String schemaPattern, String functionNamePattern, String columnNamePattern) throws SQLException {
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        String dbFilter = getDatabase(catalog, schemaPattern);
+        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String functionNameFilter = this.pedantic ? functionNamePattern : StringUtils.unQuoteIdentifier(functionNamePattern, this.quotedId);
+        final String columnNameFilter = this.pedantic ? columnNamePattern : StringUtils.unQuoteIdentifier(columnNamePattern, this.quotedId);
+
+        boolean supportsFractSeconds = this.conn.getServerVersion().meetsMinimum(ServerVersion.parseVersion("5.6.4"));
+
+        StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT SPECIFIC_CATALOG AS FUNCTION_CAT, SPECIFIC_SCHEMA AS `FUNCTION_SCHEM`,"
+                : "SELECT SPECIFIC_SCHEMA AS FUNCTION_CAT, NULL AS `FUNCTION_SCHEM`,");
+        query.append(" SPECIFIC_NAME AS `FUNCTION_NAME`, IFNULL(PARAMETER_NAME, '') AS `COLUMN_NAME`, CASE WHEN PARAMETER_MODE = 'IN' THEN ");
+        query.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_IN));
+        query.append(" WHEN PARAMETER_MODE = 'OUT' THEN ");
+        query.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_OUT));
+        query.append(" WHEN PARAMETER_MODE = 'INOUT' THEN ");
+        query.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_INOUT));
+        query.append(" WHEN ORDINAL_POSITION = 0 THEN ");
+        query.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_RETURN));
+        query.append(" ELSE ");
+        query.append(getFunctionConstant(FunctionConstant.FUNCTION_COLUMN_UNKNOWN));
+        query.append(" END AS `COLUMN_TYPE`, ");
+        appendJdbcTypeMappingQuery(query, "DATA_TYPE", "DTD_IDENTIFIER");
+        query.append(" AS `DATA_TYPE`, ");
+        query.append("UPPER(CASE");
+        if (this.tinyInt1isBit) {
+            query.append(" WHEN UPPER(DATA_TYPE)='TINYINT' THEN CASE");
+            query.append(
+                    " WHEN LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN ");
+            query.append(this.transformedBitIsBoolean ? "'BOOLEAN'" : "'BIT'");
+            query.append(" WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 THEN 'TINYINT UNSIGNED'");
+            query.append(" ELSE DATA_TYPE END ");
+        }
+        query.append(
+                " WHEN LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 AND LOCATE('UNSIGNED', UPPER(DATA_TYPE)) = 0 AND LOCATE('SET', UPPER(DATA_TYPE)) <> 1 AND LOCATE('ENUM', UPPER(DATA_TYPE)) <> 1 THEN CONCAT(DATA_TYPE, ' UNSIGNED')");
+
+        // spatial data types
+        query.append(" WHEN UPPER(DATA_TYPE)='POINT' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='LINESTRING' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='POLYGON' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOINT' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTILINESTRING' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='MULTIPOLYGON' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMETRYCOLLECTION' THEN 'GEOMETRY'");
+        query.append(" WHEN UPPER(DATA_TYPE)='GEOMCOLLECTION' THEN 'GEOMETRY'");
+
+        query.append(" ELSE UPPER(DATA_TYPE) END) AS TYPE_NAME,");
+
+        // PRECISION
+        query.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 0");
+        if (supportsFractSeconds) {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN DATETIME_PRECISION");
+        } else {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' OR LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 0");
+        }
+        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
+            query.append(
+                    " WHEN UPPER(DATA_TYPE)='TINYINT' AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
+        }
+        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
+        query.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
+        query.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
+        query.append(" ELSE NUMERIC_PRECISION END AS `PRECISION`,"); //
+
+        // LENGTH
+        query.append(" CASE WHEN LCASE(DATA_TYPE)='date' THEN 10");
+        if (supportsFractSeconds) {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+            query.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp'");
+            query.append("  THEN 19+(CASE WHEN DATETIME_PRECISION>0 THEN DATETIME_PRECISION+1 ELSE DATETIME_PRECISION END)");
+        } else {
+            query.append(" WHEN LCASE(DATA_TYPE)='time' THEN 8");
+            query.append(" WHEN LCASE(DATA_TYPE)='datetime' OR LCASE(DATA_TYPE)='timestamp' THEN 19");
+        }
+        if (this.tinyInt1isBit && !this.transformedBitIsBoolean) {
+            query.append(
+                    " WHEN (UPPER(DATA_TYPE)='TINYINT' OR UPPER(DATA_TYPE)='TINYINT UNSIGNED') AND LOCATE('ZEROFILL', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) = 0 AND LOCATE('(1)', DTD_IDENTIFIER) != 0 THEN 1");
+        }
+        // workaround for Bug#69042 (16712664), "MEDIUMINT PRECISION/TYPE INCORRECT IN INFORMATION_SCHEMA.COLUMNS", I_S bug returns NUMERIC_PRECISION=7 for MEDIUMINT UNSIGNED when it must be 8.
+        query.append(" WHEN UPPER(DATA_TYPE)='MEDIUMINT' AND LOCATE('UNSIGNED', UPPER(DTD_IDENTIFIER)) != 0 THEN 8");
+        query.append(" WHEN UPPER(DATA_TYPE)='JSON' THEN 1073741824"); // JSON columns is limited to the value of the max_allowed_packet system variable (max value 1073741824)
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH IS NULL THEN NUMERIC_PRECISION");
+        query.append(" WHEN CHARACTER_MAXIMUM_LENGTH > " + Integer.MAX_VALUE + " THEN " + Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_MAXIMUM_LENGTH END AS LENGTH, ");
+
+        query.append("NUMERIC_SCALE AS `SCALE`, 10 AS RADIX, ");
+        query.append(getFunctionConstant(FunctionConstant.FUNCTION_NULLABLE));
+        query.append(" AS `NULLABLE`,  NULL AS `REMARKS`,");
+
+        query.append(" CASE WHEN CHARACTER_OCTET_LENGTH > ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" THEN ");
+        query.append(Integer.MAX_VALUE);
+        query.append(" ELSE CHARACTER_OCTET_LENGTH END AS `CHAR_OCTET_LENGTH`,"); //
+
+        query.append(" ORDINAL_POSITION, 'YES' AS `IS_NULLABLE`,");
+        query.append(" SPECIFIC_NAME FROM INFORMATION_SCHEMA.PARAMETERS WHERE");
+
+        StringBuilder condition = new StringBuilder();
+        if (dbFilter != null) {
+            condition.append(dbMapsToSchema ? " SPECIFIC_SCHEMA LIKE ?" : " SPECIFIC_SCHEMA = ?");
+        }
+        if (functionNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
+            }
+            condition.append(" SPECIFIC_NAME LIKE ?");
+        }
+        if (columnNameFilter != null) {
+            if (condition.length() > 0) {
+                condition.append(" AND");
+            }
+            condition.append(" (PARAMETER_NAME LIKE ? OR PARAMETER_NAME IS NULL)");
+        }
+        if (condition.length() > 0) {
+            condition.append(" AND");
+        }
+        condition.append(" ROUTINE_TYPE='FUNCTION'");
+
+        query.append(condition);
+        query.append(" ORDER BY SPECIFIC_SCHEMA, SPECIFIC_NAME, ORDINAL_POSITION");
+
+        PreparedStatement pStmt = null;
+
+        try {
+            pStmt = prepareMetaDataSafeStatement(query.toString());
+            int nextId = 1;
+            if (dbFilter != null) {
+                pStmt.setString(nextId++, dbFilter);
+            }
+            if (functionNameFilter != null) {
+                pStmt.setString(nextId++, functionNameFilter);
+            }
+            if (columnNameFilter != null) {
+                pStmt.setString(nextId, columnNameFilter);
+            }
+
+            ResultSet rs = executeMetadataQuery(pStmt);
+            ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFunctionColumnsFields());
             return rs;
         } finally {
             if (pStmt != null) {

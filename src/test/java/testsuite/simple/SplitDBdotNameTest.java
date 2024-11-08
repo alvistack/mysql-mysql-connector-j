@@ -51,37 +51,37 @@ public class SplitDBdotNameTest extends BaseTestCase {
         String resString = null;
         List<String> results = new ArrayList<>();
 
-        //Test 1.1, weird DB.SP name
+        // Test 1.1, weird DB.SP name.
         src = "`MyDatabase 1.0.1.0`.`Proc 1.v1`";
         resString = StringUtils.sanitizeProcOrFuncName(src);
         assertNotNull(resString, "Test 1.1 returned null resString");
         results = StringUtils.splitDBdotName(resString, null, "`", true);
-        assertEquals(results.get(0), "MyDatabase 1.0.1.0");
-        assertEquals(results.get(1), "Proc 1.v1");
+        assertEquals(results.get(0), "`MyDatabase 1.0.1.0`");
+        assertEquals(results.get(1), "`Proc 1.v1`");
 
-        //Test 1.2, toggle isNoBslashEscSet
+        // Test 1.2, toggle isNoBslashEscSet.
         src = "`MyDatabase 1.0.1.0`.`Proc 1.v1`";
         resString = StringUtils.sanitizeProcOrFuncName(src);
         assertNotNull(resString, "Test 1.2 returned null resString");
         results = StringUtils.splitDBdotName(resString, null, "`", false);
-        assertEquals(results.get(0), "MyDatabase 1.0.1.0");
-        assertEquals(results.get(1), "Proc 1.v1");
+        assertEquals(results.get(0), "`MyDatabase 1.0.1.0`");
+        assertEquals(results.get(1), "`Proc 1.v1`");
 
-        //Test 2.1, weird SP name, no DB parameter
+        // Test 2.1, weird SP name, no DB parameter.
         src = "`Proc 1.v1`";
         resString = StringUtils.sanitizeProcOrFuncName(src);
         assertNotNull(resString, "Test 2.1 returned null resString");
         results = StringUtils.splitDBdotName(resString, null, "`", true);
         assertEquals(results.get(0), null);
-        assertEquals(results.get(1), "Proc 1.v1");
+        assertEquals(results.get(1), "`Proc 1.v1`");
 
-        //Test 2.2, toggle isNoBslashEscSet
+        // Test 2.2, toggle isNoBslashEscSet.
         src = "`Proc 1.v1`";
         resString = StringUtils.sanitizeProcOrFuncName(src);
         assertNotNull(resString, "Test 2.2 returned null resString");
         results = StringUtils.splitDBdotName(resString, null, "`", false);
         assertEquals(results.get(0), null);
-        assertEquals(results.get(1), "Proc 1.v1");
+        assertEquals(results.get(1), "`Proc 1.v1`");
     }
 
 }

@@ -52,7 +52,6 @@ import com.mysql.cj.Messages;
 import com.mysql.cj.MysqlType;
 import com.mysql.cj.PreparedQuery;
 import com.mysql.cj.QueryInfo;
-import com.mysql.cj.conf.PropertyDefinitions.DatabaseTerm;
 import com.mysql.cj.conf.PropertyKey;
 import com.mysql.cj.conf.RuntimeProperty;
 import com.mysql.cj.exceptions.FeatureNotAvailableException;
@@ -794,34 +793,32 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
 
             try {
                 //Bug#57022, we need to check for db.SPname notation first and pass on only SPname
-                String procName = extractProcedureName();
+                String dbName = "";
+                String objectName = extractProcedureName();
                 String quotedId = this.session.getIdentifierQuoteString();
-
-                List<?> parseList = StringUtils.splitDBdotName(procName, "", quotedId, this.session.getServerSession().isNoBackslashEscapesSet());
-                String tmpDb = "";
-                //There *should* be 2 rows, if any.
-                if (parseList.size() == 2) {
-                    tmpDb = (String) parseList.get(0);
-                    procName = (String) parseList.get(1);
-                } else {
-                    //keep values as they are
+                List<String> objectNameParts = StringUtils.splitDBdotName(objectName, "", quotedId, this.session.getServerSession().isNoBackslashEscapesSet());
+                if (objectNameParts.size() == 2) {
+                    dbName = objectNameParts.get(0);
+                    objectName = objectNameParts.get(1);
+                }
+                if (this.pedantic) {
+                    dbName = StringUtils.unQuoteIdentifier(dbName, quotedId);
+                    objectName = StringUtils.unQuoteIdentifier(objectName, quotedId);
                 }
 
-                boolean useDb = tmpDb.length() <= 0;
-
-                boolean dbIsSchema = this.session.getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm).getValue() == DatabaseTerm.SCHEMA;
+                if (dbName.isEmpty()) {
+                    dbName = StringUtils.quoteIdentifier(getCurrentDatabase(), quotedId, !this.pedantic);
+                }
 
                 java.sql.DatabaseMetaData dbmd = this.connection.getMetaData();
                 if (this.callingStoredFunction) {
-                    paramTypesRs = dbIsSchema ? dbmd.getFunctionColumns(null, useDb ? getCurrentDatabase() : tmpDb, procName, "%")
-                            : dbmd.getFunctionColumns(useDb ? getCurrentDatabase() : tmpDb, null, procName, "%");
+                    paramTypesRs = dbmd.getFunctionColumns(dbName, dbName, objectName, "%");
                 } else {
                     RuntimeProperty<Boolean> getProcRetFuncProp = this.session.getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions);
                     Boolean getProcRetFuncsCurrentValue = getProcRetFuncProp.getValue();
                     try {
                         getProcRetFuncProp.setValue(Boolean.FALSE);
-                        paramTypesRs = dbIsSchema ? dbmd.getProcedureColumns(null, useDb ? getCurrentDatabase() : tmpDb, procName, "%")
-                                : dbmd.getProcedureColumns(useDb ? getCurrentDatabase() : tmpDb, null, procName, "%");
+                        paramTypesRs = dbmd.getProcedureColumns(dbName, dbName, objectName, "%");
                     } finally {
                         getProcRetFuncProp.setValue(getProcRetFuncsCurrentValue);
                     }
@@ -843,17 +840,14 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
                 }
             } finally {
                 SQLException sqlExRethrow = null;
-
                 if (paramTypesRs != null) {
                     try {
                         paramTypesRs.close();
                     } catch (SQLException sqlEx) {
                         sqlExRethrow = sqlEx;
                     }
-
                     paramTypesRs = null;
                 }
-
                 if (sqlExRethrow != null) {
                     throw sqlExRethrow;
                 }
@@ -985,7 +979,6 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
         String sanitizedSql = StringUtils.stripCommentsAndHints(((PreparedQuery) this.query).getOriginalSql(), "`'\"", "`'\"",
                 !this.session.getServerSession().isNoBackslashEscapesSet());
 
-        // TODO: Do this with less memory allocation
         int endCallIndex = StringUtils.indexOfIgnoreCase(sanitizedSql, "CALL ");
         int offset = 5;
 

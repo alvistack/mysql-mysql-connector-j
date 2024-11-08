@@ -1033,14 +1033,14 @@ public class MetaDataRegressionTest extends BaseTestCase {
             assertEquals(false, dbmd.storesMixedCaseIdentifiers());
             assertEquals(false, dbmd.storesMixedCaseQuotedIdentifiers());
             assertEquals(false, dbmd.storesUpperCaseIdentifiers());
-            assertEquals(true, dbmd.storesUpperCaseQuotedIdentifiers());
+            assertEquals(false, dbmd.storesUpperCaseQuotedIdentifiers());
         } else {
             assertEquals(false, dbmd.storesLowerCaseIdentifiers());
             assertEquals(false, dbmd.storesLowerCaseQuotedIdentifiers());
             assertEquals(true, dbmd.storesMixedCaseIdentifiers());
             assertEquals(true, dbmd.storesMixedCaseQuotedIdentifiers());
             assertEquals(false, dbmd.storesUpperCaseIdentifiers());
-            assertEquals(true, dbmd.storesUpperCaseQuotedIdentifiers());
+            assertEquals(false, dbmd.storesUpperCaseQuotedIdentifiers());
         }
     }
 
@@ -5665,6 +5665,94 @@ public class MetaDataRegressionTest extends BaseTestCase {
 
             con.close();
         } while ((useIS = !useIS) || (dbTermIsSchema = !dbTermIsSchema));
+    }
+
+    /**
+     * Tests fix for Bug#116113 (Bug#37063728), DatabaseMetaData#getTables doesn't work properly for delimited identifiers.
+     *
+     * @throws Exception
+     */
+    @Test
+    void testBug116113() throws Exception {
+        createDatabase("```db````Bug116113```");
+        createTable("```db````Bug116113```.```table````Bug116113```", "(```col````Bug116113``` INT)");
+        createUser("'userBug116113'@'%'", "IDENTIFIED BY 'passBug116113'");
+        this.stmt.executeUpdate("GRANT SELECT on ```db````Bug116113```.```table````Bug116113``` to 'userBug116113'@'%'");
+        this.stmt.executeUpdate("GRANT INSERT (```col````Bug116113```) on ```db````Bug116113```.```table````Bug116113``` to 'userBug116113'@'%'");
+        createProcedure("```db````Bug116113```.```proc````Bug116113```", "(IN ```param````Bug116113``` INT) BEGIN SELECT ```param````Bug116113```; END");
+        createFunction("```db````Bug116113```.```func````Bug116113```",
+                "(```param````Bug116113``` INT) RETURNS INT DETERMINISTIC RETURN ```param````Bug116113```");
+
+        boolean pedantic = false;
+        boolean useIS = false;
+        boolean dbIsSchema = false;
+        do {
+            final String searchDbNamePattern = pedantic ? "`db``Bug116113`" : "```db````Bug116113```";
+            final String searchTableNamePattern = pedantic ? "`table``Bug116113`" : "```table````Bug116113```";
+            final String searchColumnNamePattern = pedantic ? "`col``Bug116113`" : "```col````Bug116113```";
+            final String searchProcNamePattern = pedantic ? "`proc``Bug116113`" : "```proc````Bug116113```";
+            final String searchParamNamePattern = pedantic ? "`param``Bug116113`" : "```param````Bug116113```";
+            final String searchFuncNamePattern = pedantic ? "`func``Bug116113`" : "```func````Bug116113```";
+
+            Properties props = new Properties();
+            props.setProperty(PropertyKey.pedantic.getKeyName(), Boolean.toString(pedantic));
+            props.setProperty(PropertyKey.useInformationSchema.getKeyName(), Boolean.toString(useIS));
+            props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbIsSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
+
+            try (Connection testConn = getConnectionWithProps(props)) {
+                final String testCase = String.format("Case: [pedantic: %s, useIS: %s, DbTerm: %s]", pedantic ? "Y" : "N", useIS ? "Y" : "N",
+                        dbIsSchema ? "SCHEMA" : "CATALOG");
+                DatabaseMetaData dbmd = testConn.getMetaData();
+
+                boolean lowerCaseIdentifiers = dbmd.storesLowerCaseQuotedIdentifiers();
+
+                if (dbIsSchema) {
+                    this.rs = dbmd.getSchemas(searchDbNamePattern, searchDbNamePattern);
+                    assertTrue(this.rs.next());
+                    assertEquals(lowerCaseIdentifiers ? "`db``bug116113`" : "`db``Bug116113`", this.rs.getString("TABLE_SCHEM"));
+                }
+
+                this.rs = dbmd.getTables(searchDbNamePattern, searchDbNamePattern, searchTableNamePattern, null);
+                assertTrue(this.rs.next(), testCase);
+                assertEquals(lowerCaseIdentifiers ? "`table``bug116113`" : "`table``Bug116113`", this.rs.getString("TABLE_NAME"), testCase);
+
+                this.rs = dbmd.getTablePrivileges(searchDbNamePattern, searchDbNamePattern, searchTableNamePattern);
+                assertTrue(this.rs.next(), testCase);
+                assertEquals(lowerCaseIdentifiers ? "`table``bug116113`" : "`table``Bug116113`", this.rs.getString("TABLE_NAME"), testCase);
+                assertEquals("SELECT", this.rs.getString("PRIVILEGE"));
+
+                this.rs = dbmd.getColumns(searchDbNamePattern, searchDbNamePattern, searchTableNamePattern, searchColumnNamePattern);
+                assertTrue(this.rs.next(), testCase);
+                assertEquals(lowerCaseIdentifiers ? "`table``bug116113`" : "`table``Bug116113`", this.rs.getString("TABLE_NAME"), testCase);
+                assertEquals("`col``Bug116113`", this.rs.getString("COLUMN_NAME"), testCase);
+
+                this.rs = dbmd.getColumnPrivileges(searchDbNamePattern, searchDbNamePattern, searchTableNamePattern, searchColumnNamePattern);
+                assertTrue(this.rs.next(), testCase);
+                assertEquals(lowerCaseIdentifiers ? "`table``bug116113`" : "`table``Bug116113`", this.rs.getString("TABLE_NAME"), testCase);
+                assertEquals("`col``Bug116113`", this.rs.getString("COLUMN_NAME"), testCase);
+                assertEquals("INSERT", this.rs.getString("PRIVILEGE"));
+
+                this.rs = dbmd.getProcedures(searchDbNamePattern, searchDbNamePattern, searchProcNamePattern);
+                assertTrue(this.rs.next());
+                assertEquals("`proc``Bug116113`", this.rs.getString("PROCEDURE_NAME"));
+
+                this.rs = dbmd.getProcedureColumns(searchDbNamePattern, searchDbNamePattern, searchProcNamePattern, searchParamNamePattern);
+                assertTrue(this.rs.next());
+                assertEquals("`proc``Bug116113`", this.rs.getString("PROCEDURE_NAME"));
+                assertEquals("`param``Bug116113`", this.rs.getString("COLUMN_NAME"));
+
+                this.rs = dbmd.getFunctions(searchDbNamePattern, searchDbNamePattern, searchFuncNamePattern);
+                assertTrue(this.rs.next());
+                assertEquals("`func``Bug116113`", this.rs.getString("FUNCTION_NAME"));
+
+                this.rs = dbmd.getFunctionColumns(searchDbNamePattern, searchDbNamePattern, searchFuncNamePattern, searchParamNamePattern);
+                assertTrue(this.rs.next()); // Function return.
+                assertEquals("`func``Bug116113`", this.rs.getString("FUNCTION_NAME"));
+                assertTrue(this.rs.next());
+                assertEquals("`func``Bug116113`", this.rs.getString("FUNCTION_NAME"));
+                assertEquals("`param``Bug116113`", this.rs.getString("COLUMN_NAME"));
+            }
+        } while ((pedantic = !pedantic) || (useIS = !useIS) || (dbIsSchema = !dbIsSchema));
     }
 
 }

@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#116113 (Bug#37063728), DatabaseMetaData#getTables doesn't work properly for delimited identifiers.
+
 Version 9.1.0
 
   - Fix for Bug#116114 (Bug#37067812), Connector/J is writing incorrect values when passed negative dates.

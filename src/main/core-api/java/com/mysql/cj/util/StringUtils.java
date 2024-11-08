@@ -1086,30 +1086,20 @@ public class StringUtils {
      *            quote character as defined on server
      * @param isNoBslashEscSet
      *            is our connection in no BackSlashEscape mode
-     * @return the input string with all comment-delimited data removed
+     * @return an array with the database name as first element and the object name as second.
      */
     public static List<String> splitDBdotName(String source, String db, String quoteId, boolean isNoBslashEscSet) {
         if (source == null || source.equals("%")) {
             return Collections.emptyList();
         }
-
-        int dotIndex = -1;
-        if (" ".equals(quoteId)) {
-            dotIndex = source.indexOf(".");
-        } else {
-            dotIndex = indexOfIgnoreCase(0, source, ".", quoteId, quoteId, isNoBslashEscSet ? SearchMode.__MRK_WS : SearchMode.__BSE_MRK_WS);
-        }
-
-        String database = db;
-        String entityName;
+        int dotIndex = indexOfIgnoreCase(0, source, ".", quoteId, quoteId, isNoBslashEscSet ? SearchMode.__MRK_WS : SearchMode.__BSE_MRK_WS);
+        String dbName = db;
+        String objectName = source;
         if (dotIndex != -1) {
-            database = unQuoteIdentifier(source.substring(0, dotIndex), quoteId);
-            entityName = unQuoteIdentifier(source.substring(dotIndex + 1), quoteId);
-        } else {
-            entityName = unQuoteIdentifier(source, quoteId);
+            dbName = source.substring(0, dotIndex).trim();
+            objectName = source.substring(dotIndex + 1).trim();
         }
-
-        return Arrays.asList(database, entityName);
+        return Arrays.asList(dbName, objectName);
     }
 
     /**
@@ -1190,7 +1180,7 @@ public class StringUtils {
      *            (as it is stored in the database) even if it starts and ends with quoteChar;
      *            in non-pedantic mode if identifier starts and ends with quoteChar method treats it as already quoted and doesn't modify.
      * @param isPedantic
-     *            are we in pedantic mode
+     *            operating in pedantic mode?
      *
      * @return
      *         With quoteChar="`":<br>
@@ -1228,20 +1218,19 @@ public class StringUtils {
             String identifierQuoteTrimmed = identifier.substring(quoteCharLength, identifier.length() - quoteCharLength);
 
             // Check for pairs of quotes.
-            int quoteCharPos = identifierQuoteTrimmed.indexOf(quoteChar);
-            while (quoteCharPos >= 0) {
-                int quoteCharNextExpectedPos = quoteCharPos + quoteCharLength;
-                int quoteCharNextPosition = identifierQuoteTrimmed.indexOf(quoteChar, quoteCharNextExpectedPos);
+            int quoteCharPosition = identifierQuoteTrimmed.indexOf(quoteChar);
+            while (quoteCharPosition >= 0) {
+                int quoteCharNextExpectedPosition = quoteCharPosition + quoteCharLength;
+                int quoteCharNextPosition = identifierQuoteTrimmed.indexOf(quoteChar, quoteCharNextExpectedPosition);
 
-                if (quoteCharNextPosition == quoteCharNextExpectedPos) {
-                    quoteCharPos = identifierQuoteTrimmed.indexOf(quoteChar, quoteCharNextPosition + quoteCharLength);
+                if (quoteCharNextPosition == quoteCharNextExpectedPosition) {
+                    quoteCharPosition = identifierQuoteTrimmed.indexOf(quoteChar, quoteCharNextPosition + quoteCharLength);
                 } else {
                     // Not a pair of quotes!
                     break;
                 }
             }
-
-            if (quoteCharPos < 0) {
+            if (quoteCharPosition < 0) {
                 return identifier;
             }
         }
