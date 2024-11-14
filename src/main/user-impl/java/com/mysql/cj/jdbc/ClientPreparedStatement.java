@@ -464,7 +464,7 @@ public class ClientPreparedStatement extends com.mysql.cj.jdbc.StatementImpl imp
                     return executeBatchSerially(batchTimeout);
                 } finally {
                     this.query.getStatementExecuting().set(false);
-
+                    setTimeoutInMillis(batchTimeout);
                     clearBatch();
                 }
             } catch (Throwable t) {

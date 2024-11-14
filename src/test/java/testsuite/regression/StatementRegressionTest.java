@@ -14010,4 +14010,29 @@ public class StatementRegressionTest extends BaseTestCase {
         assertThrows(SQLSyntaxErrorException.class, () -> this.stmt.executeUpdate("INSERT INTO testBug116114 (dt) VALUES '-0001-01-01 01:01:01'"));
     }
 
+    /**
+     * Tests fix for Bug#21983318, QUERYTIMEOUT VALUE RESETTING TO 0 AFTER PREPSTMT.EXECUTEBATCH() EXECUTION.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testBug21983318() throws Exception {
+        createTable("testBug21983318", "(id INT)");
+
+        Statement queryTimeoutStmt = this.conn.createStatement();
+        queryTimeoutStmt.setQueryTimeout(10);
+        assertEquals(10, queryTimeoutStmt.getQueryTimeout());
+        this.stmt.executeUpdate("INSERT INTO testBug21983318 VALUES(2)");
+        assertEquals(10, queryTimeoutStmt.getQueryTimeout());
+        queryTimeoutStmt.close();
+
+        this.pstmt = this.conn.prepareStatement("INSERT INTO testBug21983318 values(?)");
+        this.pstmt.setQueryTimeout(10);
+        assertEquals(10, this.pstmt.getQueryTimeout());
+        this.pstmt.setInt(1, 1);
+        this.pstmt.addBatch();
+        this.pstmt.executeBatch();
+        assertEquals(10, this.pstmt.getQueryTimeout());
+    }
+
 }

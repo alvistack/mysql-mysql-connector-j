@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#21983318, QUERYTIMEOUT VALUE RESETTING TO 0 AFTER PREPSTMT.EXECUTEBATCH() EXECUTION.
+
   - Fix for Bug#116113 (Bug#37063728), DatabaseMetaData#getTables doesn't work properly for delimited identifiers.
 
 Version 9.1.0
