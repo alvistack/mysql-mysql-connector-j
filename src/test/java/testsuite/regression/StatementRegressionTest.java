@@ -11621,7 +11621,7 @@ public class StatementRegressionTest extends BaseTestCase {
     @Test
     public void testBug20391550() throws Exception {
         createTable("testBug20391550", "(c1 int,c2 varchar(100))");
-        this.stmt.execute("insert into testBug20391550 values(100,'strval')");
+        this.stmt.execute("insert into testBug20391550 values(100, 'strval')");
 
         Connection con = null;
         try {
@@ -11637,7 +11637,9 @@ public class StatementRegressionTest extends BaseTestCase {
             st.setQueryTimeout(2);
 
             PreparedStatement ps = con.prepareStatement("update testBug20391550 set c2=? where c1=?");
-            assertThrows(SQLException.class, "Statement cancelled due to timeout or client request", () -> st.executeQuery("select sleep(8)"));
+            assertThrows(SQLException.class, "Statement cancelled due to timeout or client request", () -> st.executeQuery("select sleep(180)"));
+
+            TimeUnit.SECONDS.sleep(2); // Make sure the connection gets time to be closed since the cancellation is happening on another thread.
 
             assertThrows(SQLException.class, "No operations allowed after statement closed.", () -> {
                 ps.setInt(2, 100);
@@ -11651,7 +11653,6 @@ public class StatementRegressionTest extends BaseTestCase {
                 ps.executeUpdate();
                 return null;
             });
-
         } finally {
             if (con != null) {
                 con.close();
@@ -12106,7 +12107,7 @@ public class StatementRegressionTest extends BaseTestCase {
         Supplier<Integer> sessionCount = () -> {
             try {
                 this.stmt.execute("FLUSH STATUS");
-                this.rs = this.stmt.executeQuery("SHOW STATUS LIKE 'threads_connected'");
+                this.rs = this.stmt.executeQuery("SHOW GLOBAL STATUS LIKE 'threads_connected'");
                 this.rs.next();
                 return this.rs.getInt(2);
             } catch (SQLException e) {
@@ -12136,9 +12137,11 @@ public class StatementRegressionTest extends BaseTestCase {
         assertEquals(1, sessionCount.get() - initialSessionCount);
 
         testStmt.cancel();
+        TimeUnit.SECONDS.sleep(1); // Status values don't update immediately.
         assertEquals(1, sessionCount.get() - initialSessionCount);
 
         testConn.close();
+        TimeUnit.SECONDS.sleep(1); // Status values don't update immediately.
         assertEquals(0, sessionCount.get() - initialSessionCount);
     }
 
@@ -12151,29 +12154,24 @@ public class StatementRegressionTest extends BaseTestCase {
     public void testBug99260() throws Exception {
         assumeTrue(versionMeetsMinimum(5, 7), "MySQL 5.7+ is required to run this test.");
 
-        Properties props = new Properties();
-        props.setProperty(PropertyKey.sslMode.getKeyName(), SslMode.DISABLED.name());
-        props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
-
-        Connection testConn = getConnectionWithProps(props);
-        long threadId = ((JdbcConnection) testConn).getId();
-        Supplier<Integer> sessionCount = () -> { // Counts sessions created since the main connection.
-            try (Statement testStmt = testConn.createStatement()) {
-                int c = 0;
-                testStmt.execute("FLUSH STATUS");
-                this.rs = testStmt.executeQuery("SHOW PROCESSLIST");
-                while (this.rs.next()) {
-                    if (this.rs.getInt(1) > threadId) {
-                        c++;
-                    }
-                }
-                return c;
+        Supplier<Integer> sessionCount = () -> {
+            try {
+                this.stmt.execute("FLUSH STATUS");
+                this.rs = this.stmt.executeQuery("SHOW GLOBAL STATUS LIKE 'threads_connected'");
+                this.rs.next();
+                return this.rs.getInt(2);
             } catch (SQLException e) {
                 throw new RuntimeException(e.getMessage(), e);
             }
         };
 
-        assertEquals(0, sessionCount.get());
+        Properties props = new Properties();
+        props.setProperty(PropertyKey.sslMode.getKeyName(), SslMode.DISABLED.name());
+        props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
+
+        Connection testConn = getConnectionWithProps(props);
+
+        int initialSessionCount = sessionCount.get();
 
         Statement testStmt = testConn.createStatement();
         testStmt.setQueryTimeout(1);
@@ -12182,7 +12180,10 @@ public class StatementRegressionTest extends BaseTestCase {
                 testStmt.executeQuery("SELECT SLEEP(30)");
                 return null;
             });
-            assertEquals(0, sessionCount.get());
+            // The difference between the `initialSessionCount` and the current session count would be greater than one if connections external to this test are
+            // created in between. Chances for this to happen in a controlled or development environment are very low and can be neglected.
+            TimeUnit.SECONDS.sleep(1); // Status values don't update immediately.
+            assertEquals(0, sessionCount.get() - initialSessionCount);
         }
 
         testConn.close();

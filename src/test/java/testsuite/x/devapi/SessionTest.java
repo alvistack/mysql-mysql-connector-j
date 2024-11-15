@@ -65,6 +65,7 @@ import com.mysql.cj.conf.PropertyDefinitions;
 import com.mysql.cj.conf.PropertyDefinitions.Compression;
 import com.mysql.cj.conf.PropertyDefinitions.XdevapiSslMode;
 import com.mysql.cj.conf.PropertyKey;
+import com.mysql.cj.exceptions.AssertionFailedException;
 import com.mysql.cj.exceptions.CJCommunicationsException;
 import com.mysql.cj.exceptions.CJPacketTooBigException;
 import com.mysql.cj.exceptions.FeatureNotAvailableException;
@@ -72,6 +73,7 @@ import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import com.mysql.cj.exceptions.WrongArgumentException;
 import com.mysql.cj.protocol.SocketFactory;
 import com.mysql.cj.protocol.x.XProtocolError;
+import com.mysql.cj.util.Util;
 import com.mysql.cj.x.protobuf.Mysqlx.ServerMessages;
 import com.mysql.cj.x.protobuf.MysqlxNotice.Frame;
 import com.mysql.cj.xdevapi.Client;
@@ -313,7 +315,8 @@ public class SessionTest extends DevApiBaseTestCase {
         // we should have visibility of at least these two
         Schema infoSchema = this.session.getSchema("information_schema");
         assertTrue(schemas.contains(infoSchema));
-        Schema testSchema = this.session.getSchema(getTestDatabase());
+        String dbName = Util.isRunningOnWindows() ? getTestDatabase().toLowerCase() : getTestDatabase();
+        Schema testSchema = this.session.getSchema(dbName);
         assertTrue(schemas.contains(testSchema));
     }
 
@@ -1049,8 +1052,9 @@ public class SessionTest extends DevApiBaseTestCase {
         assumeTrue(isServerRunningOnWindows() && isMysqlRunningLocally(),
                 "This test can run only when client and server are running on the same Windows host.");
 
-        for (String path : new String[] { null, "\\\\.\\pipe\\MySQL80" }) {
-            String url = this.baseUrl + makeParam(PropertyKey.socketFactory, "com.mysql.cj.protocol.NamedPipeSocketFactory");
+        for (String path : new String[] { null, "\\\\.\\pipe\\MySQLfoo" }) {
+            String url = this.baseUrl + (this.baseUrl.contains("?") ? "" : "?")
+                    + makeParam(PropertyKey.socketFactory, "com.mysql.cj.protocol.NamedPipeSocketFactory");
             if (path != null) {
                 url += makeParam(PropertyKey.PATH, path);
             }
@@ -1064,7 +1068,7 @@ public class SessionTest extends DevApiBaseTestCase {
                             && ((path == null ? "\\\\.\\pipe\\MySQL" : path) + " (The system cannot find the file specified)")
                                     .equals(cause.getCause().getMessage())) {
                         continue;
-                    } else if (cause instanceof XProtocolError
+                    } else if (cause instanceof AssertionFailedException
                             && "ASSERTION FAILED: Unknown message type: 10 (server messages mapping: null)".equals(cause.getMessage())) {
                         // if named pipes are enabled on server then we expect this error because the pipe is bound to legacy protocol
                         continue;
@@ -2384,7 +2388,8 @@ public class SessionTest extends DevApiBaseTestCase {
         SqlResult sqlRes = null;
         Row r = null;
         try {
-            assertThrows(ExecutionException.class, ".*Unknown table '" + this.schema.getName() + ".non_existing'.*", () -> {
+            String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
+            assertThrows(ExecutionException.class, ".*Unknown table '" + schemaName + ".non_existing'.*", () -> {
                 CompletableFuture<SqlResult> res = this.session.sql("drop table non_existing").executeAsync();
                 res.get();
                 return null;

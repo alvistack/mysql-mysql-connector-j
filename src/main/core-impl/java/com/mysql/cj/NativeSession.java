@@ -997,7 +997,7 @@ public class NativeSession extends CoreSession implements Serializable {
         getSessionLock().lock();
         try {
             if (this.cancelTimer == null) {
-                this.cancelTimer = new Timer("MySQL Statement Cancellation Timer", Boolean.TRUE);
+                this.cancelTimer = new Timer("MySQL Statement Cancellation Timer", true);
             }
             return this.cancelTimer;
         } finally {

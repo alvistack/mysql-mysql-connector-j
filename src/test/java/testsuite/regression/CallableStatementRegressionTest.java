@@ -33,6 +33,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.CallableStatement;
 import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.sql.ParameterMetaData;
 import java.sql.PreparedStatement;
 import java.sql.ResultSetMetaData;
@@ -281,7 +282,7 @@ public class CallableStatementRegressionTest extends BaseTestCase {
     }
 
     /**
-     * Tests fix forBUG#10310 - Driver doesn't support {?=CALL(...)} for calling stored functions.
+     * Tests fix for BUG#10310 - Driver doesn't support {?=CALL(...)} for calling stored functions.
      * This involved adding support for function retrieval to DatabaseMetaData.getProcedures() and getProcedureColumns() as well.
      *
      * @throws Exception
@@ -411,9 +412,7 @@ public class CallableStatementRegressionTest extends BaseTestCase {
     @Test
     public void testBug12417() throws Exception {
         if (isServerRunningOnWindows()) {
-
             createProcedure("testBug12417", "()\nBEGIN\nSELECT 1;end\n");
-
             Connection ucCatalogConn = null;
 
             try {
@@ -428,6 +427,11 @@ public class CallableStatementRegressionTest extends BaseTestCase {
         }
     }
 
+    /**
+     * Tests fix for Bug#15121 - a faulty procedure is executed but no exception is thrown.
+     *
+     * @throws Exception
+     */
     @Test
     public void testBug15121() throws Exception {
         createProcedure("p_testBug15121", "()\nBEGIN\nSELECT * from idonotexist;\nEND");
@@ -438,15 +442,17 @@ public class CallableStatementRegressionTest extends BaseTestCase {
         props.setProperty(PropertyKey.DBNAME.getKeyName(), "");
 
         Connection noDbConn = getConnectionWithProps(props);
+        DatabaseMetaData dbmd = noDbConn.getMetaData();
 
         StringBuilder queryBuf = new StringBuilder("{call ");
-        String quotedId = this.conn.getMetaData().getIdentifierQuoteString();
+        String quotedId = dbmd.getIdentifierQuoteString();
         queryBuf.append(quotedId);
         queryBuf.append(this.conn.getCatalog());
         queryBuf.append(quotedId);
         queryBuf.append(".p_testBug15121()}");
 
-        assertThrows(SQLException.class, "Table '" + this.conn.getCatalog() + ".idonotexist' doesn't exist", () -> {
+        String db = dbmd.storesLowerCaseIdentifiers() ? this.conn.getCatalog().toLowerCase() : this.conn.getCatalog();
+        assertThrows(SQLException.class, "Table '" + db + ".idonotexist' doesn't exist", () -> {
             noDbConn.prepareCall(queryBuf.toString()).execute();
             return null;
         });

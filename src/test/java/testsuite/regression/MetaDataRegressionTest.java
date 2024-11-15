@@ -959,7 +959,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
                     .getValue();
             assertEquals(false, defaultDbConfig);
 
-            // we use the table name which also exists in `mysql' database
+            // we use the table name which also exists in 'mysql' database
             createTable(dbname + "." + tableName, "(field1 int)");
             createTable(tableName, "(field1 int)");
             String currentDb = ((JdbcConnection) this.conn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
@@ -993,7 +993,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
                 while (this.rs.next()) {
                     String currDb = ((JdbcConnection) this.conn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
                             .getValue() == DatabaseTerm.SCHEMA ? this.rs.getString("TABLE_SCHEM") : this.rs.getString("TABLE_CAT");
-                    assertEquals(currentDb, currDb);
+                    assertTrue(currentDb.equalsIgnoreCase(currDb));
                 }
 
             } finally {
@@ -2456,13 +2456,14 @@ public class MetaDataRegressionTest extends BaseTestCase {
         boolean dbMapsToSchema = ((JdbcConnection) nullCatConn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
                 .getValue() == DatabaseTerm.SCHEMA;
 
+        String expectedDb = dbMapsToSchema ? nullCatConn.getSchema() : nullCatConn.getCatalog();
         while (dbTblCols.next()) {
             String db = dbMapsToSchema ? dbTblCols.getString("TABLE_SCHEM") : dbTblCols.getString("TABLE_CAT");
             String table = dbTblCols.getString("TABLE_NAME");
             boolean useLowerCaseTableNames = dbmd.storesLowerCaseIdentifiers();
 
-            if (db.equals(dbMapsToSchema ? nullCatConn.getSchema() : nullCatConn.getCatalog())
-                    && (useLowerCaseTableNames && "testBug31187".equalsIgnoreCase(table) || "testBug31187".equals(table))) {
+            if (useLowerCaseTableNames && db.equalsIgnoreCase(expectedDb) && "testBug31187".equalsIgnoreCase(table)
+                    || db.equalsIgnoreCase(expectedDb) && "testBug31187".equals(table)) {
                 found = true;
             }
         }
@@ -3433,71 +3434,42 @@ public class MetaDataRegressionTest extends BaseTestCase {
         props.setProperty(PropertyKey.sslMode.getKeyName(), SslMode.DISABLED.name());
         props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
         props.setProperty(PropertyKey.nullDatabaseMeansCurrent.getKeyName(), "true");
-
         Connection testConn;
 
         createFunction("testBug69298_func", "(param_func INT) RETURNS INT COMMENT 'testBug69298_func comment' DETERMINISTIC RETURN 1");
         createProcedure("testBug69298_proc", "(IN param_proc INT) COMMENT 'testBug69298_proc comment' SELECT 1");
 
-        // test with property useInformationSchema=false
-        props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "false");
-        testConn = getConnectionWithProps(props);
-        assertFalse(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue(),
-                "Property useInformationSchema should be false");
-        assertTrue(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue(),
-                "Property getProceduresReturnsFunctions should be true");
-        checkGetFunctionsForBug69298("Std. Connection MetaData", testConn);
-        checkGetFunctionColumnsForBug69298("Std. Connection MetaData", testConn);
-        checkGetProceduresForBug69298("Std. Connection MetaData", testConn);
-        checkGetProcedureColumnsForBug69298("Std. Connection MetaData", testConn);
-        testConn.close();
+        boolean useIS = false;
+        boolean procRetFunc = false;
+        boolean dbIsSch = false;
+        do {
+            final String testCase = String.format("Case: [useIS: %s, procRetFunc: %s, DbTerm: %s]", useIS ? "Y" : "N", procRetFunc ? "Y" : "N",
+                    dbIsSch ? "SCHEMA" : "CATALOG");
 
-        // test with property useInformationSchema=true
-        props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "true");
-        testConn = getConnectionWithProps(props);
-        assertTrue(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue(),
-                "Property useInformationSchema should be true");
-        assertTrue(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue(),
-                "Property getProceduresReturnsFunctions should be true");
-        checkGetFunctionsForBug69298("Prop. useInfoSchema(1) MetaData", testConn);
-        checkGetFunctionColumnsForBug69298("Prop. useInfoSchema(1) MetaData", testConn);
-        checkGetProceduresForBug69298("Prop. useInfoSchema(1) MetaData", testConn);
-        checkGetProcedureColumnsForBug69298("Prop. useInfoSchema(1) MetaData", testConn);
-        testConn.close();
-
-        // test with property useInformationSchema=false & getProceduresReturnsFunctions=false
-        props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "false");
-        props.setProperty(PropertyKey.getProceduresReturnsFunctions.getKeyName(), "false");
-        testConn = getConnectionWithProps(props);
-        assertFalse(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue(),
-                "Property useInformationSchema should be false");
-        assertFalse(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue(),
-                "Property getProceduresReturnsFunctions should be false");
-        checkGetFunctionsForBug69298("Prop. getProcRetFunc(0) MetaData", testConn);
-        checkGetFunctionColumnsForBug69298("Prop. getProcRetFunc(0) MetaData", testConn);
-        checkGetProceduresForBug69298("Prop. getProcRetFunc(0) MetaData", testConn);
-        checkGetProcedureColumnsForBug69298("Prop. getProcRetFunc(0) MetaData", testConn);
-        testConn.close();
-
-        // test with property useInformationSchema=true & getProceduresReturnsFunctions=false
-        props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "true");
-        props.setProperty(PropertyKey.getProceduresReturnsFunctions.getKeyName(), "false");
-        testConn = getConnectionWithProps(props);
-        assertTrue(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue(),
-                "Property useInformationSchema should be true");
-        assertFalse(((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue(),
-                "Property getProceduresReturnsFunctions should be false");
-        checkGetFunctionsForBug69298("Prop. useInfoSchema(1) + getProcRetFunc(0) MetaData", testConn);
-        checkGetFunctionColumnsForBug69298("Prop. useInfoSchema(1) + getProcRetFunc(0) MetaData", testConn);
-        checkGetProceduresForBug69298("Prop. useInfoSchema(1) + getProcRetFunc(0) MetaData", testConn);
-        checkGetProcedureColumnsForBug69298("Prop. useInfoSchema(1) + getProcRetFunc(0) MetaData", testConn);
-        testConn.close();
+            props.setProperty(PropertyKey.useInformationSchema.getKeyName(), Boolean.toString(useIS));
+            props.setProperty(PropertyKey.getProceduresReturnsFunctions.getKeyName(), Boolean.toString(procRetFunc));
+            props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbIsSch ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
+            testConn = getConnectionWithProps(props);
+            assertEquals(useIS, ((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.useInformationSchema).getValue(),
+                    "Property useInformationSchema should be " + useIS);
+            assertEquals(procRetFunc, ((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions).getValue(),
+                    "Property getProceduresReturnsFunctions should be " + procRetFunc);
+            assertEquals(dbIsSch ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name(),
+                    ((JdbcConnection) testConn).getPropertySet().getEnumProperty(PropertyKey.databaseTerm).getValue().name(),
+                    "Property databaseTerm should be " + (dbIsSch ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name()));
+            checkGetFunctionsForBug69298(testCase, testConn);
+            checkGetFunctionColumnsForBug69298(testCase, testConn);
+            checkGetProceduresForBug69298(testCase, testConn);
+            checkGetProcedureColumnsForBug69298(testCase, testConn);
+            testConn.close();
+        } while ((useIS = !useIS) || (procRetFunc = !procRetFunc) || (dbIsSch = !dbIsSch));
     }
 
     private void checkGetFunctionsForBug69298(String stepDescription, Connection testConn) throws Exception {
         DatabaseMetaData testDbMetaData = testConn.getMetaData();
         boolean dbMapsToSchema = ((JdbcConnection) testConn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
                 .getValue() == DatabaseTerm.SCHEMA;
+        boolean lowerCaseIds = testDbMetaData.storesLowerCaseIdentifiers();
         ResultSet functionsMD = testDbMetaData.getFunctions(null, null, "testBug69298_%");
         String sd = stepDescription + " getFunctions() ";
 
@@ -3505,8 +3477,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
 
         // function: testBug69298_func
 
-        assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), functionsMD.getString("FUNCTION_CAT"), sd + "-> FUNCTION_CAT");
-        assertEquals(dbMapsToSchema ? testConn.getSchema() : null, functionsMD.getString("FUNCTION_SCHEM"), sd + "-> FUNCTION_SCHEM");
+        assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(), functionsMD.getString("FUNCTION_CAT"),
+                sd + "-> FUNCTION_CAT");
+        assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null, functionsMD.getString("FUNCTION_SCHEM"),
+                sd + "-> FUNCTION_SCHEM");
         assertEquals("testBug69298_func", functionsMD.getString("FUNCTION_NAME"), sd + "-> FUNCTION_NAME");
         assertEquals("testBug69298_func comment", functionsMD.getString("REMARKS"), sd + "-> REMARKS");
         assertEquals(DatabaseMetaData.functionNoTable, functionsMD.getShort("FUNCTION_TYPE"), sd + "-> FUNCTION_TYPE");
@@ -3519,14 +3493,17 @@ public class MetaDataRegressionTest extends BaseTestCase {
         DatabaseMetaData testDbMetaData = testConn.getMetaData();
         boolean dbMapsToSchema = ((JdbcConnection) testConn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
                 .getValue() == DatabaseTerm.SCHEMA;
+        boolean lowerCaseIds = testDbMetaData.storesLowerCaseIdentifiers();
         ResultSet funcColsMD = testDbMetaData.getFunctionColumns(null, null, "testBug69298_%", "%");
         String sd = stepDescription + " getFunctionColumns() ";
 
         assertTrue(funcColsMD.next(), sd + "1st of 2 rows expected.");
 
         // function column: testBug69298_func return
-        assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), funcColsMD.getString("FUNCTION_CAT"), sd + "-> FUNCTION_CAT");
-        assertEquals(dbMapsToSchema ? testConn.getSchema() : null, funcColsMD.getString("FUNCTION_SCHEM"), sd + "-> FUNCTION_SCHEM");
+        assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(), funcColsMD.getString("FUNCTION_CAT"),
+                sd + "-> FUNCTION_CAT");
+        assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null, funcColsMD.getString("FUNCTION_SCHEM"),
+                sd + "-> FUNCTION_SCHEM");
         assertEquals("testBug69298_func", funcColsMD.getString("FUNCTION_NAME"), sd + "-> FUNCTION_NAME");
         assertEquals("", funcColsMD.getString("COLUMN_NAME"), sd + "-> COLUMN_NAME");
         assertEquals(DatabaseMetaData.functionReturn, funcColsMD.getShort("COLUMN_TYPE"), sd + "-> COLUMN_TYPE");
@@ -3546,8 +3523,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
         assertTrue(funcColsMD.next(), sd + "2nd of 2 rows expected.");
 
         // function column: testBug69298_func.param_func
-        assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), funcColsMD.getString("FUNCTION_CAT"), sd + "-> FUNCTION_CAT");
-        assertEquals(dbMapsToSchema ? testConn.getSchema() : null, funcColsMD.getString("FUNCTION_SCHEM"), sd + "-> FUNCTION_SCHEM");
+        assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(), funcColsMD.getString("FUNCTION_CAT"),
+                sd + "-> FUNCTION_CAT");
+        assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null, funcColsMD.getString("FUNCTION_SCHEM"),
+                sd + "-> FUNCTION_SCHEM");
         assertEquals("testBug69298_func", funcColsMD.getString("FUNCTION_NAME"), sd + "-> FUNCTION_NAME");
         assertEquals("param_func", funcColsMD.getString("COLUMN_NAME"), sd + "-> COLUMN_NAME");
         assertEquals(DatabaseMetaData.functionColumnIn, funcColsMD.getShort("COLUMN_TYPE"), sd + "-> COLUMN_TYPE");
@@ -3571,6 +3550,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
         DatabaseMetaData testDbMetaData = testConn.getMetaData();
         boolean dbMapsToSchema = ((JdbcConnection) testConn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
                 .getValue() == DatabaseTerm.SCHEMA;
+        boolean lowerCaseIds = testDbMetaData.storesLowerCaseIdentifiers();
         ResultSet proceduresMD = testDbMetaData.getProcedures(null, null, "testBug69298_%");
         String sd = stepDescription + " getProcedures() ";
         boolean isGetProceduresReturnsFunctions = ((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions)
@@ -3580,8 +3560,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
             assertTrue(proceduresMD.next(), sd + "1st of 2 rows expected.");
 
             // function: testBug69298_func
-            assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), proceduresMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
-            assertEquals(dbMapsToSchema ? testConn.getSchema() : null, proceduresMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
+            assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(),
+                    proceduresMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
+            assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null,
+                    proceduresMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
             assertEquals("testBug69298_func", proceduresMD.getString("PROCEDURE_NAME"), sd + "-> PROCEDURE_NAME");
             assertEquals("testBug69298_func comment", proceduresMD.getString("REMARKS"), sd + "-> REMARKS");
             assertEquals(DatabaseMetaData.procedureReturnsResult, proceduresMD.getShort("PROCEDURE_TYPE"), sd + "-> PROCEDURE_TYPE");
@@ -3593,8 +3575,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
         }
 
         // procedure: testBug69298_proc
-        assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), proceduresMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
-        assertEquals(dbMapsToSchema ? testConn.getSchema() : null, proceduresMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
+        assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(),
+                proceduresMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
+        assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null,
+                proceduresMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
         assertEquals("testBug69298_proc", proceduresMD.getString("PROCEDURE_NAME"), sd + "-> PROCEDURE_NAME");
         assertEquals("testBug69298_proc comment", proceduresMD.getString("REMARKS"), sd + "-> REMARKS");
         assertEquals(DatabaseMetaData.procedureNoResult, proceduresMD.getShort("PROCEDURE_TYPE"), sd + "-> PROCEDURE_TYPE");
@@ -3607,6 +3591,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
         DatabaseMetaData testDbMetaData = testConn.getMetaData();
         boolean dbMapsToSchema = ((JdbcConnection) testConn).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm)
                 .getValue() == DatabaseTerm.SCHEMA;
+        boolean lowerCaseIds = testDbMetaData.storesLowerCaseIdentifiers();
         ResultSet procColsMD = testDbMetaData.getProcedureColumns(null, null, "testBug69298_%", "%");
         String sd = stepDescription + " getProcedureColumns() ";
         boolean isGetProceduresReturnsFunctions = ((JdbcConnection) testConn).getPropertySet().getBooleanProperty(PropertyKey.getProceduresReturnsFunctions)
@@ -3616,8 +3601,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
             assertTrue(procColsMD.next(), sd + "1st of 3 rows expected.");
 
             // function column: testBug69298_func return
-            assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), procColsMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
-            assertEquals(dbMapsToSchema ? testConn.getSchema() : null, procColsMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
+            assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(),
+                    procColsMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
+            assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null,
+                    procColsMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
             assertEquals("testBug69298_func", procColsMD.getString("PROCEDURE_NAME"), sd + "-> PROCEDURE_NAME");
             assertEquals("", procColsMD.getString("COLUMN_NAME"), sd + "-> COLUMN_NAME");
             assertEquals(DatabaseMetaData.procedureColumnReturn, procColsMD.getShort("COLUMN_TYPE"), sd + "-> COLUMN_TYPE");
@@ -3640,8 +3627,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
             assertTrue(procColsMD.next(), sd + "2nd of 3 rows expected.");
 
             // function column: testBug69298_func.param_func
-            assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), procColsMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
-            assertEquals(dbMapsToSchema ? testConn.getSchema() : null, procColsMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
+            assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(),
+                    procColsMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
+            assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null,
+                    procColsMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
             assertEquals("testBug69298_func", procColsMD.getString("PROCEDURE_NAME"), sd + "-> PROCEDURE_NAME");
             assertEquals("param_func", procColsMD.getString("COLUMN_NAME"), sd + "-> COLUMN_NAME");
             assertEquals(DatabaseMetaData.procedureColumnIn, procColsMD.getShort("COLUMN_TYPE"), sd + "-> COLUMN_TYPE");
@@ -3667,8 +3656,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
         }
 
         // procedure column: testBug69298_proc.param_proc
-        assertEquals(dbMapsToSchema ? "def" : testConn.getCatalog(), procColsMD.getString("PROCEDURE_CAT"), sd + "-> PROCEDURE_CAT");
-        assertEquals(dbMapsToSchema ? testConn.getSchema() : null, procColsMD.getString("PROCEDURE_SCHEM"), sd + "-> PROCEDURE_SCHEM");
+        assertEquals(dbMapsToSchema ? "def" : lowerCaseIds ? testConn.getCatalog().toLowerCase() : testConn.getCatalog(), procColsMD.getString("PROCEDURE_CAT"),
+                sd + "-> PROCEDURE_CAT");
+        assertEquals(dbMapsToSchema ? lowerCaseIds ? testConn.getSchema().toLowerCase() : testConn.getSchema() : null, procColsMD.getString("PROCEDURE_SCHEM"),
+                sd + "-> PROCEDURE_SCHEM");
         assertEquals("testBug69298_proc", procColsMD.getString("PROCEDURE_NAME"), sd + "-> PROCEDURE_NAME");
         assertEquals("param_proc", procColsMD.getString("COLUMN_NAME"), sd + "-> COLUMN_NAME");
         assertEquals(DatabaseMetaData.procedureColumnIn, procColsMD.getShort("COLUMN_TYPE"), sd + "-> COLUMN_TYPE");

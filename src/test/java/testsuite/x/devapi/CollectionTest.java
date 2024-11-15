@@ -37,6 +37,7 @@ import org.junit.jupiter.api.Test;
 import com.mysql.cj.ServerVersion;
 import com.mysql.cj.exceptions.WrongArgumentException;
 import com.mysql.cj.protocol.x.XProtocolError;
+import com.mysql.cj.util.Util;
 import com.mysql.cj.xdevapi.AddResult;
 import com.mysql.cj.xdevapi.Collection;
 import com.mysql.cj.xdevapi.DatabaseObject.DbObjectStatus;
@@ -2444,11 +2445,12 @@ public class CollectionTest extends BaseCollectionTestCase {
 
         for (i = 0; i < NUMBER_OF_QUERIES; ++i) {
             int i1 = i;
+            String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
             if (i % 10 == 0) {
                 res = ((CompletableFuture<AddResult>) futures.get(i)).get();
                 assertEquals(1, res.getAffectedItemsCount());
             } else if (i % 10 == 1) {
-                assertThrows(ExecutionException.class, ".*FUNCTION " + this.schema.getName() + ".NON_EXISTING_FUNCTION1 does not exist.*",
+                assertThrows(ExecutionException.class, ".*FUNCTION " + schemaName + ".NON_EXISTING_FUNCTION1 does not exist.*",
                         () -> ((CompletableFuture<DocResult>) futures.get(i1)).get());
             } else if (i % 10 == 2) {
                 docs = ((CompletableFuture<DocResult>) futures.get(i)).get();
@@ -2463,17 +2465,17 @@ public class CollectionTest extends BaseCollectionTestCase {
                 Result res2 = ((CompletableFuture<AddResult>) futures.get(i)).get();
                 assertEquals(1, res2.getAffectedItemsCount());
             } else if (i % 10 == 5) {
-                assertThrows(ExecutionException.class, ".*FUNCTION " + this.schema.getName() + ".NON_EXISTING_FUNCTION2 does not exist.*",
+                assertThrows(ExecutionException.class, ".*FUNCTION " + schemaName + ".NON_EXISTING_FUNCTION2 does not exist.*",
                         () -> ((CompletableFuture<Result>) futures.get(i1)).get());
             } else if (i % 10 == 6) {
-                assertThrows(ExecutionException.class, ".*FUNCTION " + this.schema.getName() + ".NON_EXISTING_FUNCTION3 does not exist.*",
+                assertThrows(ExecutionException.class, ".*FUNCTION " + schemaName + ".NON_EXISTING_FUNCTION3 does not exist.*",
                         () -> ((CompletableFuture<Result>) futures.get(i1)).get());
             } else if (i % 10 == 7) {
                 res1 = ((CompletableFuture<SqlResult>) futures.get(i)).get();
                 res1.next();
                 assertFalse(res1.hasNext());
             } else if (i % 10 == 8) {
-                assertThrows(ExecutionException.class, ".*FUNCTION " + this.schema.getName() + ".non_existingfun does not exist.*",
+                assertThrows(ExecutionException.class, ".*FUNCTION " + schemaName + ".non_existingfun does not exist.*",
                         () -> ((CompletableFuture<SqlResult>) futures.get(i1)).get());
             } else {
                 Result res2 = ((CompletableFuture<AddResult>) futures.get(i)).get();

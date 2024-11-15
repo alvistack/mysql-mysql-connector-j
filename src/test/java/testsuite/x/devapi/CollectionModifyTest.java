@@ -40,6 +40,7 @@ import org.junit.jupiter.api.Test;
 
 import com.mysql.cj.ServerVersion;
 import com.mysql.cj.exceptions.CJException;
+import com.mysql.cj.util.Util;
 import com.mysql.cj.xdevapi.AddResult;
 import com.mysql.cj.xdevapi.Collection;
 import com.mysql.cj.xdevapi.DbDoc;
@@ -208,10 +209,10 @@ public class CollectionModifyTest extends BaseCollectionTestCase {
         while (res.hasNext()) {
             DbDoc jd = res.next();
             if (jd.get("y") != null) {
-                assertEquals(nestedDoc.toString(), ((DbDoc) jd.get("y")).toString());
+                assertEquals(nestedDoc.toString(), jd.get("y").toString());
             }
             if (jd.get("m") != null) {
-                assertEquals(nestedDoc.toString(), ((DbDoc) jd.get("m")).toString());
+                assertEquals(nestedDoc.toString(), jd.get("m").toString());
             }
         }
     }
@@ -1841,7 +1842,8 @@ public class CollectionModifyTest extends BaseCollectionTestCase {
                 assertEquals(maxrec / 2, res2.getAffectedItemsCount());
             } else if (i % 3 == 1) {
                 int i1 = i;
-                assertThrows(ExecutionException.class, ".*FUNCTION " + this.schema.getName() + ".NON_EXISTING_FUNCTION does not exist.*",
+                String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
+                assertThrows(ExecutionException.class, ".*FUNCTION " + schemaName + ".NON_EXISTING_FUNCTION does not exist.*",
                         () -> ((CompletableFuture<Result>) futures.get(i1)).get());
             } else {
                 res2 = ((CompletableFuture<Result>) futures.get(i)).get();
@@ -2023,7 +2025,7 @@ public class CollectionModifyTest extends BaseCollectionTestCase {
         JsonArray arr = (JsonArray) doc.get("arr");
         assertEquals(3, arr.size());
         for (JsonValue v : arr) {
-            assertEquals(5, ((JsonString) v).toFormattedString().indexOf(expectedPart));
+            assertEquals(5, v.toFormattedString().indexOf(expectedPart));
         }
     }
 

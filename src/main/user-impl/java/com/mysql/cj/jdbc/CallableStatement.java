@@ -39,7 +39,6 @@ import java.sql.SQLType;
 import java.sql.SQLXML;
 import java.sql.Time;
 import java.sql.Timestamp;
-import java.sql.Wrapper;
 import java.util.ArrayList;
 import java.util.Calendar;
 import java.util.HashMap;
@@ -2279,7 +2278,7 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
                         ClientPreparedStatement setPstmt = null;
 
                         try {
-                            setPstmt = ((Wrapper) this.connection.clientPrepareStatement(queryBuf.toString())).unwrap(ClientPreparedStatement.class);
+                            setPstmt = this.connection.clientPrepareStatement(queryBuf.toString()).unwrap(ClientPreparedStatement.class);
                             setPstmt.getQueryBindings().setFromBindValue(0, ((PreparedQuery) this.query).getQueryBindings().getBindValues()[inParamInfo.index]);
                             setPstmt.executeUpdate();
                         } finally {

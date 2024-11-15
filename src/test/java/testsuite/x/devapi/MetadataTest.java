@@ -32,6 +32,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import com.mysql.cj.ServerVersion;
+import com.mysql.cj.util.Util;
 import com.mysql.cj.x.protobuf.MysqlxResultset.ColumnMetaData;
 import com.mysql.cj.xdevapi.Column;
 import com.mysql.cj.xdevapi.RowResult;
@@ -60,14 +61,15 @@ public class MetadataTest extends BaseTableTestCase {
     }
 
     @Test
-    public void example_metadata() {
+    public void exampleMetadata() {
         Table table = this.schema.getTable("example_metadata");
         RowResult rows = table.select("_id, name, birthday, age").execute();
         List<Column> metadata = rows.getColumns();
         assertEquals(4, metadata.size());
         Column idCol = metadata.get(0);
+        String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
 
-        assertEquals(this.schema.getName(), idCol.getSchemaName());
+        assertEquals(schemaName, idCol.getSchemaName());
         assertEquals("example_metadata", idCol.getTableName());
         assertEquals("example_metadata", idCol.getTableLabel());
         assertEquals("_id", idCol.getColumnName());
@@ -100,7 +102,7 @@ public class MetadataTest extends BaseTableTestCase {
         assertEquals(false, idCol.isPartKey());
 
         Column nameCol = metadata.get(1);
-        assertEquals(this.schema.getName(), nameCol.getSchemaName());
+        assertEquals(schemaName, nameCol.getSchemaName());
         assertEquals("example_metadata", nameCol.getTableName());
         assertEquals("example_metadata", nameCol.getTableLabel());
         assertEquals("name", nameCol.getColumnName());
@@ -133,7 +135,7 @@ public class MetadataTest extends BaseTableTestCase {
         assertEquals(false, nameCol.isPartKey());
 
         Column birthdayCol = metadata.get(2);
-        assertEquals(this.schema.getName(), birthdayCol.getSchemaName());
+        assertEquals(schemaName, birthdayCol.getSchemaName());
         assertEquals("example_metadata", birthdayCol.getTableName());
         assertEquals("example_metadata", birthdayCol.getTableLabel());
         assertEquals("birthday", birthdayCol.getColumnName());
@@ -152,7 +154,7 @@ public class MetadataTest extends BaseTableTestCase {
         assertEquals(false, birthdayCol.isPartKey());
 
         Column ageCol = metadata.get(3);
-        assertEquals(this.schema.getName(), ageCol.getSchemaName());
+        assertEquals(schemaName, ageCol.getSchemaName());
         assertEquals("example_metadata", ageCol.getTableName());
         assertEquals("example_metadata", ageCol.getTableLabel());
         assertEquals("age", ageCol.getColumnName());
@@ -179,7 +181,8 @@ public class MetadataTest extends BaseTableTestCase {
         assertEquals(1, metadata.size());
         Column idCol = metadata.get(0);
 
-        assertEquals(this.schema.getName(), idCol.getSchemaName());
+        String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
+        assertEquals(schemaName, idCol.getSchemaName());
         assertEquals("example_metadata", idCol.getTableName());
         assertEquals("example_metadata", idCol.getTableLabel());
         assertEquals("_id", idCol.getColumnName());
@@ -249,9 +252,10 @@ public class MetadataTest extends BaseTableTestCase {
             RowResult rows = table.select("_id, doc").execute();
             List<Column> metadata = rows.getColumns();
             assertEquals(2, metadata.size());
+            String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
 
             Column idCol = metadata.get(0);
-            assertEquals(this.schema.getName(), idCol.getSchemaName());
+            assertEquals(schemaName, idCol.getSchemaName());
             assertEquals(collName, idCol.getTableName());
             assertEquals(collName, idCol.getTableLabel());
             assertEquals("_id", idCol.getColumnName());
@@ -285,7 +289,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(false, idCol.isPartKey());
 
             Column docCol = metadata.get(1);
-            assertEquals(this.schema.getName(), docCol.getSchemaName());
+            assertEquals(schemaName, docCol.getSchemaName());
             assertEquals(collName, docCol.getTableName());
             assertEquals(collName, docCol.getTableLabel());
             assertEquals("doc", docCol.getColumnName());
@@ -353,11 +357,12 @@ public class MetadataTest extends BaseTableTestCase {
             RowResult rows = table.select("a,b,c,d,e,f,g,h,i,j,k,l,m").execute();
             List<Column> metadata = rows.getColumns();
             assertEquals(13, metadata.size());
+            String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
 
             Column c;
 
             c = metadata.get(0);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("a", c.getColumnName());
@@ -376,7 +381,7 @@ public class MetadataTest extends BaseTableTestCase {
             // assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(1);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("b", c.getColumnName());
@@ -409,7 +414,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(true, c.isPartKey());
 
             c = metadata.get(2);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("c", c.getColumnName());
@@ -428,7 +433,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(3);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("d", c.getColumnName());
@@ -447,7 +452,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(false, c.isPartKey());
 
             c = metadata.get(4);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("e", c.getColumnName());
@@ -466,7 +471,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(5);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("f", c.getColumnName());
@@ -485,7 +490,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(false, c.isPartKey());
 
             c = metadata.get(6);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("g", c.getColumnName());
@@ -504,7 +509,7 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(false, c.isPartKey());
 
             c = metadata.get(7);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("h", c.getColumnName());
@@ -523,7 +528,7 @@ public class MetadataTest extends BaseTableTestCase {
             // assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(8);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("i", c.getColumnName());
@@ -542,7 +547,7 @@ public class MetadataTest extends BaseTableTestCase {
             // assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(9);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("j", c.getColumnName());
@@ -561,7 +566,7 @@ public class MetadataTest extends BaseTableTestCase {
             // assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(10);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("k", c.getColumnName());
@@ -580,7 +585,7 @@ public class MetadataTest extends BaseTableTestCase {
             // assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(11);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("l", c.getColumnName());
@@ -609,7 +614,7 @@ public class MetadataTest extends BaseTableTestCase {
             // assertEquals(false, c.isPartKey()); // irrelevant, we shouldn't expect any concrete value
 
             c = metadata.get(12);
-            assertEquals(this.schema.getName(), c.getSchemaName());
+            assertEquals(schemaName, c.getSchemaName());
             assertEquals(tableName, c.getTableName());
             assertEquals(tableName, c.getTableLabel());
             assertEquals("m", c.getColumnName());
@@ -642,7 +647,7 @@ public class MetadataTest extends BaseTableTestCase {
     }
 
     @Test
-    public void testGetColumnInfoFromnSession() throws Exception {
+    public void testGetColumnInfoFromSession() throws Exception {
         Column myCol = null;
         List<Column> metadata = null;
         try {
@@ -658,6 +663,7 @@ public class MetadataTest extends BaseTableTestCase {
 
             SqlResult sRes = this.session.sql("select * from  " + this.schema.getName() + ".xyz , qadatabase.xyz mytable").execute();
             metadata = sRes.getColumns();
+            String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
 
             assertEquals(6, metadata.size());
             for (int i = 0; i < metadata.size(); i++) {
@@ -667,7 +673,7 @@ public class MetadataTest extends BaseTableTestCase {
             myCol = metadata.get(0);
             assertEquals("i", myCol.getColumnName());
             assertEquals("i", myCol.getColumnLabel());
-            assertEquals(this.schema.getName(), myCol.getSchemaName());
+            assertEquals(schemaName, myCol.getSchemaName());
             assertEquals("xyz", myCol.getTableName());
             assertEquals("xyz", myCol.getTableLabel());
             assertEquals(Type.INT, myCol.getType());
@@ -686,7 +692,7 @@ public class MetadataTest extends BaseTableTestCase {
             myCol = metadata.get(1);
             assertEquals("j", myCol.getColumnName());
             assertEquals("j", myCol.getColumnLabel());
-            assertEquals(this.schema.getName(), myCol.getSchemaName());
+            assertEquals(schemaName, myCol.getSchemaName());
             assertEquals("xyz", myCol.getTableName());
             assertEquals("xyz", myCol.getTableLabel());
             assertEquals(Type.BIGINT, myCol.getType());
@@ -705,7 +711,7 @@ public class MetadataTest extends BaseTableTestCase {
             myCol = metadata.get(2);
             assertEquals("k", myCol.getColumnName());
             assertEquals("k", myCol.getColumnLabel());
-            assertEquals(this.schema.getName(), myCol.getSchemaName());
+            assertEquals(schemaName, myCol.getSchemaName());
             assertEquals("xyz", myCol.getTableName());
             assertEquals("xyz", myCol.getTableLabel());
             assertEquals(Type.TINYINT, myCol.getType());
@@ -724,7 +730,7 @@ public class MetadataTest extends BaseTableTestCase {
             myCol = metadata.get(3);
             assertEquals("l", myCol.getColumnName());
             assertEquals("l", myCol.getColumnLabel());
-            assertEquals(this.schema.getName(), myCol.getSchemaName());
+            assertEquals(schemaName, myCol.getSchemaName());
             assertEquals("xyz", myCol.getTableName());
             assertEquals("xyz", myCol.getTableLabel());
             assertEquals(Type.STRING, myCol.getType());
@@ -743,7 +749,7 @@ public class MetadataTest extends BaseTableTestCase {
             myCol = metadata.get(4);
             assertEquals("m", myCol.getColumnName());
             assertEquals("m", myCol.getColumnLabel());
-            assertEquals(this.schema.getName(), myCol.getSchemaName());
+            assertEquals(schemaName, myCol.getSchemaName());
             assertEquals("xyz", myCol.getTableName());
             assertEquals("xyz", myCol.getTableLabel());
             assertEquals(Type.DECIMAL, myCol.getType());
@@ -788,6 +794,8 @@ public class MetadataTest extends BaseTableTestCase {
         RowResult rows = null;
         Table table = null;
         try {
+            String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
+
             sqlUpdate("drop table if exists qatable");
             sqlUpdate("create table qatable (_id varchar(32), a varchar(20), b date, c int)");
             sqlUpdate("insert into qatable values ('X', 'Abcd', '2016-03-07',10)");
@@ -802,16 +810,16 @@ public class MetadataTest extends BaseTableTestCase {
             assertEquals(4, metadata.size());
 
             Column idCol = metadata.get(0);
-            assertEquals(this.schema.getName(), idCol.getSchemaName());
+            assertEquals(schemaName, idCol.getSchemaName());
 
             Column aCol = metadata.get(1);
-            assertEquals(this.schema.getName(), aCol.getSchemaName());
+            assertEquals(schemaName, aCol.getSchemaName());
 
             Column bCol = metadata.get(2);
-            assertEquals(this.schema.getName(), bCol.getSchemaName());
+            assertEquals(schemaName, bCol.getSchemaName());
 
             Column cCol = metadata.get(3);
-            assertEquals(this.schema.getName(), cCol.getSchemaName());
+            assertEquals(schemaName, cCol.getSchemaName());
 
             SqlResult sRes = this.session.sql("select * from  qadatabase.qatable").execute();
             metadata = sRes.getColumns();

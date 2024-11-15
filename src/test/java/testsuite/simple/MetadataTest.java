@@ -59,6 +59,7 @@ import com.mysql.cj.jdbc.DatabaseMetaDataUsingInfoSchema;
 import com.mysql.cj.jdbc.JdbcConnection;
 import com.mysql.cj.protocol.Resultset;
 import com.mysql.cj.util.StringUtils;
+import com.mysql.cj.util.Util;
 
 import testsuite.BaseQueryInterceptor;
 import testsuite.BaseTestCase;
@@ -77,8 +78,6 @@ public class MetadataTest extends BaseTestCase {
             for (boolean dbMapsToSchema : new boolean[] { false, true }) {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
-
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
 
                 Connection conn1 = null;
                 try {
@@ -119,16 +118,16 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 ResultSet rs1 = null;
                 ResultSet rs2 = null;
                 ResultSet rs3 = null;
 
                 try {
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData dbmd = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData dbmd = testConn.getMetaData();
+                    boolean lowerCaseIds = dbmd.storesLowerCaseQuotedIdentifiers();
+                    String expectedDbName = lowerCaseIds ? this.dbName.toLowerCase() : this.dbName;
 
                     rs1 = dbmd.getSchemas();
                     rs2 = dbmd.getSchemas(this.dbName, this.dbName.substring(0, 3) + "%");
@@ -136,18 +135,18 @@ public class MetadataTest extends BaseTestCase {
 
                     if (dbMapsToSchema) {
                         boolean found = false;
-                        while (rs1.next()) {
+                        while (!found && rs1.next()) {
                             assertEquals("def", rs1.getString("TABLE_CATALOG"));
-                            if (this.dbName.equals(rs1.getString("TABLE_SCHEM"))) {
+                            if (expectedDbName.equals(rs1.getString("TABLE_SCHEM"))) {
                                 found = true;
                             }
                         }
                         assertTrue(found);
 
                         found = false;
-                        while (rs2.next()) {
+                        while (!found && rs2.next()) {
                             assertEquals("def", rs2.getString("TABLE_CATALOG"));
-                            if (this.dbName.equals(rs2.getString("TABLE_SCHEM"))) {
+                            if (expectedDbName.equals(rs2.getString("TABLE_SCHEM"))) {
                                 found = true;
                             }
                         }
@@ -159,17 +158,16 @@ public class MetadataTest extends BaseTestCase {
                         assertFalse(rs2.next());
 
                         boolean found = false;
-                        while (rs3.next()) {
-                            if (this.dbName.equals(rs3.getString("TABLE_CAT"))) {
+                        while (!found && rs3.next()) {
+                            if (expectedDbName.equals(rs3.getString("TABLE_CAT"))) {
                                 found = true;
                             }
                         }
                         assertTrue(found);
                     }
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -224,22 +222,22 @@ public class MetadataTest extends BaseTestCase {
             Properties props = new Properties();
             props.setProperty(PropertyKey.sslMode.getKeyName(), "DISABLED");
             props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
-            Connection conn1 = null;
 
             for (boolean useIS : new boolean[] { false, true }) {
                 for (boolean dbMapsToSchema : new boolean[] { false, true }) {
                     props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                     props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                    System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
+                    Connection testConn = null;
                     try {
-                        conn1 = getConnectionWithProps(props);
+                        testConn = getConnectionWithProps(props);
 
                         String dbNamePattern = this.dbName.substring(0, this.dbName.length() - 1) + "%";
                         String refDbPattern = refDb.substring(0, refDb.length() - 1) + "%";
 
-                        DatabaseMetaData dbmd = conn1.getMetaData();
+                        DatabaseMetaData dbmd = testConn.getMetaData();
+                        boolean lowerCaseIds = dbmd.storesLowerCaseIdentifiers();
+                        String expectedDbName = lowerCaseIds ? this.dbName.toLowerCase() : this.dbName;
 
                         if (dbMapsToSchema) {
                             this.rs = dbmd.getImportedKeys(null, this.dbName, "child");
@@ -258,13 +256,13 @@ public class MetadataTest extends BaseTestCase {
                         while (this.rs.next()) {
                             if (dbMapsToSchema) {
                                 assertEquals("def", this.rs.getString("PKTABLE_CAT"));
-                                assertEquals(this.dbName, this.rs.getString("PKTABLE_SCHEM"));
+                                assertEquals(expectedDbName, this.rs.getString("PKTABLE_SCHEM"));
                                 assertEquals("def", this.rs.getString("FKTABLE_CAT"));
-                                assertEquals(this.dbName, this.rs.getString("FKTABLE_SCHEM"));
+                                assertEquals(expectedDbName, this.rs.getString("FKTABLE_SCHEM"));
                             } else {
-                                assertEquals(this.dbName, this.rs.getString("PKTABLE_CAT"));
+                                assertEquals(expectedDbName, this.rs.getString("PKTABLE_CAT"));
                                 assertNull(this.rs.getString("PKTABLE_SCHEM"));
-                                assertEquals(this.dbName, this.rs.getString("FKTABLE_CAT"));
+                                assertEquals(expectedDbName, this.rs.getString("FKTABLE_CAT"));
                                 assertNull(this.rs.getString("FKTABLE_SCHEM"));
                             }
                             assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
@@ -298,13 +296,13 @@ public class MetadataTest extends BaseTestCase {
                         while (this.rs.next()) {
                             if (dbMapsToSchema) {
                                 assertEquals("def", this.rs.getString("PKTABLE_CAT"));
-                                assertEquals(this.dbName, this.rs.getString("PKTABLE_SCHEM"));
+                                assertEquals(expectedDbName, this.rs.getString("PKTABLE_SCHEM"));
                                 assertEquals("def", this.rs.getString("FKTABLE_CAT"));
-                                assertEquals(this.dbName, this.rs.getString("FKTABLE_SCHEM"));
+                                assertEquals(expectedDbName, this.rs.getString("FKTABLE_SCHEM"));
                             } else {
-                                assertEquals(this.dbName, this.rs.getString("PKTABLE_CAT"));
+                                assertEquals(expectedDbName, this.rs.getString("PKTABLE_CAT"));
                                 assertNull(this.rs.getString("PKTABLE_SCHEM"));
-                                assertEquals(this.dbName, this.rs.getString("FKTABLE_CAT"));
+                                assertEquals(expectedDbName, this.rs.getString("FKTABLE_CAT"));
                                 assertNull(this.rs.getString("FKTABLE_SCHEM"));
                             }
                             assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
@@ -342,11 +340,11 @@ public class MetadataTest extends BaseTestCase {
                             assertEquals("def", this.rs.getString("PKTABLE_CAT"));
                             assertEquals(refDb, this.rs.getString("PKTABLE_SCHEM"));
                             assertEquals("def", this.rs.getString("FKTABLE_CAT"));
-                            assertEquals(this.dbName, this.rs.getString("FKTABLE_SCHEM"));
+                            assertEquals(expectedDbName, this.rs.getString("FKTABLE_SCHEM"));
                         } else {
                             assertEquals(refDb, this.rs.getString("PKTABLE_CAT"));
                             assertNull(this.rs.getString("PKTABLE_SCHEM"));
-                            assertEquals(this.dbName, this.rs.getString("FKTABLE_CAT"));
+                            assertEquals(expectedDbName, this.rs.getString("FKTABLE_CAT"));
                             assertNull(this.rs.getString("FKTABLE_SCHEM"));
                         }
                         assertEquals("cpd_foreign_3", this.rs.getString("PKTABLE_NAME"));
@@ -365,11 +363,11 @@ public class MetadataTest extends BaseTestCase {
                             assertEquals("def", this.rs.getString("PKTABLE_CAT"));
                             assertEquals(refDb, this.rs.getString("PKTABLE_SCHEM"));
                             assertEquals("def", this.rs.getString("FKTABLE_CAT"));
-                            assertEquals(this.dbName, this.rs.getString("FKTABLE_SCHEM"));
+                            assertEquals(expectedDbName, this.rs.getString("FKTABLE_SCHEM"));
                         } else {
                             assertEquals(refDb, this.rs.getString("PKTABLE_CAT"));
                             assertNull(this.rs.getString("PKTABLE_SCHEM"));
-                            assertEquals(this.dbName, this.rs.getString("FKTABLE_CAT"));
+                            assertEquals(expectedDbName, this.rs.getString("FKTABLE_CAT"));
                             assertNull(this.rs.getString("FKTABLE_SCHEM"));
                         }
                         assertEquals("cpd_foreign_3", this.rs.getString("PKTABLE_NAME"));
@@ -389,8 +387,8 @@ public class MetadataTest extends BaseTestCase {
                         this.rs = null;
 
                     } finally {
-                        if (conn1 != null) {
-                            conn1.close();
+                        if (testConn != null) {
+                            testConn.close();
                         }
                     }
                 }
@@ -424,24 +422,25 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData dbmd = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData dbmd = testConn.getMetaData();
+                    boolean lowerCaseIds = dbmd.storesLowerCaseIdentifiers();
+                    String expectedDbName = lowerCaseIds ? this.dbName.toLowerCase() : this.dbName;
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = dbmd.getPrimaryKeys("", dbPattern, "multikey"); //metaData.getIndexInfo(null, dbPattern, "t1", false, true);
                         assertFalse(this.rs.next(), "Schema pattern " + dbPattern + " should not be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = dbmd.getPrimaryKeys(dbPattern, null, "multikey"); //metaData.getIndexInfo(dbPattern, null, "t1", false, true);
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
 
-                    this.rs = dbMapsToSchema ? dbmd.getPrimaryKeys("", conn1.getSchema(), "multikey") : dbmd.getPrimaryKeys(conn1.getCatalog(), "", "multikey");
+                    this.rs = dbMapsToSchema ? dbmd.getPrimaryKeys("", testConn.getSchema(), "multikey")
+                            : dbmd.getPrimaryKeys(testConn.getCatalog(), "", "multikey");
 
                     short[] keySeqs = new short[4];
                     String[] columnNames = new String[4];
@@ -450,9 +449,9 @@ public class MetadataTest extends BaseTestCase {
                     while (this.rs.next()) {
                         if (dbMapsToSchema) {
                             assertEquals("def", this.rs.getString("TABLE_CAT"));
-                            assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+                            assertEquals(expectedDbName, this.rs.getString("TABLE_SCHEM"));
                         } else {
-                            assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+                            assertEquals(expectedDbName, this.rs.getString("TABLE_CAT"));
                             assertNull(this.rs.getString("TABLE_SCHEM"));
                         }
                         this.rs.getString("TABLE_NAME");
@@ -464,8 +463,8 @@ public class MetadataTest extends BaseTestCase {
                     assertFalse(keySeqs[0] != 3 && keySeqs[1] != 2 && keySeqs[2] != 4 && keySeqs[3] != 1, "Keys returned in wrong order");
 
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -573,8 +572,6 @@ public class MetadataTest extends BaseTestCase {
             assertTrue(!((Boolean) this.rs.getObject(2)).booleanValue());
             assertEquals(this.rs.getObject(3), null);
 
-            System.out.println(this.rs.getObject(1) + ", " + this.rs.getObject(2) + ", " + this.rs.getObject(3));
-
             this.rs = this.conn.prepareStatement("SELECT field1, field2, field3 FROM testBitType").executeQuery();
             this.rs.next();
 
@@ -592,7 +589,6 @@ public class MetadataTest extends BaseTestCase {
 
             createTable("testBitField", "(field1 BIT(9))");
             this.rs = this.stmt.executeQuery("SELECT field1 FROM testBitField");
-            System.out.println(this.rs.getMetaData().getColumnClassName(1));
         } finally {
         }
     }
@@ -744,31 +740,30 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
+                    boolean lowerCaseIds = metaData.storesLowerCaseIdentifiers();
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getIndexInfo(null, dbPattern, "t1", false, true);
                         assertFalse(this.rs.next(), "Schema pattern " + dbPattern + " should not be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getIndexInfo(dbPattern, null, "t1", false, true);
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
 
-                    this.rs = dbMapsToSchema ? metaData.getIndexInfo(null, conn1.getCatalog(), "t1", false, true)
-                            : metaData.getIndexInfo(conn1.getCatalog(), null, "t1", false, true);
+                    this.rs = dbMapsToSchema ? metaData.getIndexInfo(null, testConn.getCatalog(), "t1", false, true)
+                            : metaData.getIndexInfo(testConn.getCatalog(), null, "t1", false, true);
                     this.rs.next();
                     if (dbMapsToSchema) {
                         assertEquals("def", this.rs.getString("TABLE_CAT"));
-                        assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+                        assertEquals(lowerCaseIds ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_SCHEM"));
                     } else {
-                        assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+                        assertEquals(lowerCaseIds ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_CAT"));
                         assertNull(this.rs.getString("TABLE_SCHEM"));
                     }
                     assertEquals("t1", this.rs.getString("TABLE_NAME"));
@@ -784,8 +779,8 @@ public class MetadataTest extends BaseTestCase {
                     assertNull(this.rs.getString("FILTER_CONDITION"));
 
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -809,18 +804,19 @@ public class MetadataTest extends BaseTestCase {
             for (boolean dbMapsToSchema : new boolean[] { false, true }) {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
+                    boolean lowerCaseIds = metaData.storesLowerCaseIdentifiers();
                     this.rs = metaData.getColumns(null, null, "t1", null);
                     this.rs.next();
 
                     if (dbMapsToSchema) {
                         assertEquals("def", this.rs.getString("TABLE_CAT"));
-                        assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+                        assertEquals(lowerCaseIds ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_SCHEM"));
                     } else {
-                        assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+                        assertEquals(lowerCaseIds ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_CAT"));
                         assertNull(this.rs.getString("TABLE_SCHEM"));
                     }
 
@@ -830,18 +826,18 @@ public class MetadataTest extends BaseTestCase {
                     assertEquals("1", this.rs.getString("COLUMN_SIZE"));
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getColumns(null, dbPattern, "t1", null);
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getColumns(dbPattern, null, "t1", null);
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
 
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -896,13 +892,10 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     this.rs = metaData.getTables(null, null, "t1-_", null);
                     testGetTables_checkResult(useIS, dbMapsToSchema);
@@ -914,18 +907,17 @@ public class MetadataTest extends BaseTestCase {
                     testGetTables_checkResult(useIS, dbMapsToSchema);
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getTables(null, dbPattern, "t1-_", null);
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getTables(dbPattern, null, "t1-_", null);
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -934,12 +926,13 @@ public class MetadataTest extends BaseTestCase {
 
     @Test
     private void testGetTables_checkResult(boolean useIS, boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("TABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_CAT"));
             assertNull(this.rs.getString("TABLE_SCHEM"));
         }
         assertEquals("t1-1", this.rs.getString("TABLE_NAME"));
@@ -954,9 +947,9 @@ public class MetadataTest extends BaseTestCase {
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("TABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_CAT"));
             assertNull(this.rs.getString("TABLE_SCHEM"));
         }
         assertEquals("t1-2", this.rs.getString("TABLE_NAME"));
@@ -986,8 +979,8 @@ public class MetadataTest extends BaseTestCase {
         props.setProperty(PropertyKey.sslMode.getKeyName(), "DISABLED");
         props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
         props.setProperty(PropertyKey.nullDatabaseMeansCurrent.getKeyName(), "true");
-        Connection conn1 = null;
-        Statement stmt1 = null;
+        Connection testConn = null;
+        Statement testStmt = null;
         String userHostQuoted = null;
 
         for (boolean useIS : new boolean[] { false, true }) {
@@ -998,10 +991,10 @@ public class MetadataTest extends BaseTestCase {
                 boolean grantFailed = true;
 
                 try {
-                    conn1 = getConnectionWithProps(props);
-                    stmt1 = conn1.createStatement();
+                    testConn = getConnectionWithProps(props);
+                    testStmt = testConn.createStatement();
                     createTable("t1", "(c1 int)");
-                    this.rs = stmt1.executeQuery("SELECT CURRENT_USER()");
+                    this.rs = testStmt.executeQuery("SELECT CURRENT_USER()");
                     this.rs.next();
                     String user = this.rs.getString(1);
                     List<String> userHost = StringUtils.split(user, "@", false);
@@ -1010,7 +1003,7 @@ public class MetadataTest extends BaseTestCase {
                     userHostQuoted = "'" + userHost.get(0) + "'@'" + userHost.get(1) + "'";
 
                     try {
-                        stmt1.executeUpdate("GRANT update (c1) on t1 to " + userHostQuoted);
+                        testStmt.executeUpdate("GRANT update (c1) on t1 to " + userHostQuoted);
                         grantFailed = false;
                     } catch (SQLException sqlEx) {
                         fail("This testcase needs to be run with a URL that allows the user to issue GRANTs "
@@ -1019,14 +1012,15 @@ public class MetadataTest extends BaseTestCase {
                     }
 
                     if (!grantFailed) {
-                        DatabaseMetaData metaData = conn1.getMetaData();
+                        DatabaseMetaData metaData = testConn.getMetaData();
+                        boolean lowerCaseIds = metaData.storesLowerCaseIdentifiers();
                         this.rs = metaData.getColumnPrivileges(null, null, "t1", null);
                         this.rs.next();
                         if (dbMapsToSchema) {
                             assertEquals("def", this.rs.getString("TABLE_CAT"));
-                            assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+                            assertEquals(lowerCaseIds ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_SCHEM"));
                         } else {
-                            assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+                            assertEquals(lowerCaseIds ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_CAT"));
                             assertNull(this.rs.getString("TABLE_SCHEM"));
                         }
                         assertEquals("t1", this.rs.getString("TABLE_NAME"));
@@ -1035,25 +1029,25 @@ public class MetadataTest extends BaseTestCase {
                         assertEquals("UPDATE", this.rs.getString("PRIVILEGE"));
 
                         if (dbMapsToSchema) {
-                            String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                            String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                             this.rs = metaData.getColumnPrivileges(null, dbPattern, "t1", null);
                             assertFalse(this.rs.next(), "Schema pattern " + dbPattern + " should not be recognized.");
                         } else {
-                            String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                            String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                             this.rs = metaData.getColumnPrivileges(dbPattern, null, "t1", null);
                             assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                         }
                     }
                 } finally {
-                    if (stmt1 != null) {
+                    if (testStmt != null) {
                         if (!grantFailed) {
-                            stmt1.executeUpdate("REVOKE UPDATE (c1) ON t1 FROM " + userHostQuoted);
+                            testStmt.executeUpdate("REVOKE UPDATE (c1) ON t1 FROM " + userHostQuoted);
                         }
-                        stmt1.close();
+                        testStmt.close();
                     }
 
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1072,20 +1066,17 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getProcedures(null, dbPattern, "sp1");
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getProcedures(dbPattern, null, "sp1");
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
@@ -1098,10 +1089,9 @@ public class MetadataTest extends BaseTestCase {
 
                     this.rs = metaData.getProcedures(this.dbName, null, "sp1");
                     testGetProcedures_checkResult(dbMapsToSchema);
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1109,12 +1099,13 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetProcedures_checkResult(boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("PROCEDURE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("PROCEDURE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PROCEDURE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("PROCEDURE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PROCEDURE_CAT"));
             assertNull(this.rs.getString("PROCEDURE_SCHEM"));
         }
         assertEquals("sp1", this.rs.getString("PROCEDURE_NAME"));
@@ -1138,13 +1129,10 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     this.rs = metaData.getFunctions(null, null, "testGetFunctionsF");
                     testGetFunctions_checkResult(dbMapsToSchema);
@@ -1156,18 +1144,17 @@ public class MetadataTest extends BaseTestCase {
                     testGetFunctions_checkResult(dbMapsToSchema);
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getFunctions(null, dbPattern, "testGetFunctionsF");
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getFunctions(dbPattern, null, "testGetFunctionsF");
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1175,12 +1162,13 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetFunctions_checkResult(boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("FUNCTION_CAT"));
-            assertEquals(this.dbName, this.rs.getString("FUNCTION_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FUNCTION_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("FUNCTION_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FUNCTION_CAT"));
             assertNull(this.rs.getString("FUNCTION_SCHEM"));
         }
         assertEquals("testGetFunctionsF", this.rs.getString("FUNCTION_NAME"));
@@ -1201,20 +1189,17 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getProcedureColumns(null, dbPattern, "testGetProcedureColumnsP", "%");
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getProcedureColumns(dbPattern, null, "testGetProcedureColumnsP", "%");
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
@@ -1227,10 +1212,9 @@ public class MetadataTest extends BaseTestCase {
 
                     this.rs = metaData.getProcedureColumns(this.dbName, null, "testGetProcedureColumnsP", "%");
                     testGetProcedureColumns_checkResult(dbMapsToSchema);
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1238,12 +1222,13 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetProcedureColumns_checkResult(boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("PROCEDURE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("PROCEDURE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PROCEDURE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("PROCEDURE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PROCEDURE_CAT"));
             assertNull(this.rs.getString("PROCEDURE_SCHEM"));
         }
         assertEquals("testGetProcedureColumnsP", this.rs.getString("PROCEDURE_NAME"));
@@ -1279,13 +1264,10 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     this.rs = metaData.getFunctionColumns(null, null, "testGetFunctionColumnsF", "%");
                     testGetFunctionColumns_checkResult(dbMapsToSchema);
@@ -1297,18 +1279,17 @@ public class MetadataTest extends BaseTestCase {
                     testGetFunctionColumns_checkResult(dbMapsToSchema);
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getFunctionColumns(null, dbPattern, "testGetFunctionColumnsF", "%");
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getFunctionColumns(dbPattern, null, "testGetFunctionColumnsF", "%");
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1316,12 +1297,13 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetFunctionColumns_checkResult(boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("FUNCTION_CAT"));
-            assertEquals(this.dbName, this.rs.getString("FUNCTION_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FUNCTION_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("FUNCTION_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FUNCTION_CAT"));
             assertNull(this.rs.getString("FUNCTION_SCHEM"));
         }
         assertEquals("testGetFunctionColumnsF", this.rs.getString("FUNCTION_NAME"));
@@ -1343,9 +1325,9 @@ public class MetadataTest extends BaseTestCase {
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("FUNCTION_CAT"));
-            assertEquals(this.dbName, this.rs.getString("FUNCTION_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FUNCTION_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("FUNCTION_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FUNCTION_CAT"));
             assertNull(this.rs.getString("FUNCTION_SCHEM"));
         }
         assertEquals("testGetFunctionColumnsF", this.rs.getString("FUNCTION_NAME"));
@@ -1418,13 +1400,10 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     this.rs = metaData.getExportedKeys(null, null, "parent");
                     testGetExportedKeys_checkResult(useIS, dbMapsToSchema);
@@ -1434,10 +1413,9 @@ public class MetadataTest extends BaseTestCase {
 
                     this.rs = metaData.getExportedKeys(this.dbName, null, "parent");
                     testGetExportedKeys_checkResult(useIS, dbMapsToSchema);
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1447,16 +1425,17 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetExportedKeys_checkResult(boolean useIS, boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("PKTABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("PKTABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PKTABLE_SCHEM"));
             assertEquals("def", this.rs.getString("FKTABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("FKTABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FKTABLE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("PKTABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PKTABLE_CAT"));
             assertNull(this.rs.getString("PKTABLE_SCHEM"));
-            assertEquals(this.dbName, this.rs.getString("FKTABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FKTABLE_CAT"));
             assertNull(this.rs.getString("FKTABLE_SCHEM"));
         }
         assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
@@ -1484,13 +1463,10 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     this.rs = metaData.getImportedKeys(null, null, "child");
                     testGetImportedKeys_checkResult(useIS, dbMapsToSchema);
@@ -1500,10 +1476,9 @@ public class MetadataTest extends BaseTestCase {
 
                     this.rs = metaData.getImportedKeys(this.dbName, null, "child");
                     testGetImportedKeys_checkResult(useIS, dbMapsToSchema);
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1511,16 +1486,17 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetImportedKeys_checkResult(boolean useIS, boolean dbMapsToSchema) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("PKTABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("PKTABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PKTABLE_SCHEM"));
             assertEquals("def", this.rs.getString("FKTABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("FKTABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FKTABLE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("PKTABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("PKTABLE_CAT"));
             assertNull(this.rs.getString("PKTABLE_SCHEM"));
-            assertEquals(this.dbName, this.rs.getString("FKTABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FKTABLE_CAT"));
             assertNull(this.rs.getString("FKTABLE_SCHEM"));
         }
         assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
@@ -1766,13 +1742,10 @@ public class MetadataTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
 
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
-
-                Connection conn1 = null;
+                Connection testConn = null;
                 try {
-
-                    conn1 = getConnectionWithProps(props);
-                    DatabaseMetaData metaData = conn1.getMetaData();
+                    testConn = getConnectionWithProps(props);
+                    DatabaseMetaData metaData = testConn.getMetaData();
 
                     String tablePattern = "testGetTablePriv%";
                     if (!metaData.supportsMixedCaseIdentifiers()) {
@@ -1790,18 +1763,17 @@ public class MetadataTest extends BaseTestCase {
                     testGetTablePrivileges_checkResult(dbMapsToSchema, tableName);
 
                     if (dbMapsToSchema) {
-                        String dbPattern = conn1.getSchema().substring(0, conn1.getSchema().length() - 1) + "%";
+                        String dbPattern = testConn.getSchema().substring(0, testConn.getSchema().length() - 1) + "%";
                         this.rs = metaData.getTablePrivileges(null, dbPattern, tablePattern);
                         assertTrue(this.rs.next(), "Schema pattern " + dbPattern + " should be recognized.");
                     } else {
-                        String dbPattern = conn1.getCatalog().substring(0, conn1.getCatalog().length() - 1) + "%";
+                        String dbPattern = testConn.getCatalog().substring(0, testConn.getCatalog().length() - 1) + "%";
                         this.rs = metaData.getTablePrivileges(dbPattern, null, tablePattern);
                         assertFalse(this.rs.next(), "Catalog pattern " + dbPattern + " should not be recognized.");
                     }
-
                 } finally {
-                    if (conn1 != null) {
-                        conn1.close();
+                    if (testConn != null) {
+                        testConn.close();
                     }
                 }
             }
@@ -1809,12 +1781,13 @@ public class MetadataTest extends BaseTestCase {
     }
 
     private void testGetTablePrivileges_checkResult(boolean dbMapsToSchema, String tableName) throws Exception {
+        boolean runningOnWindows = Util.isRunningOnWindows();
         assertTrue(this.rs.next());
         if (dbMapsToSchema) {
             assertEquals("def", this.rs.getString("TABLE_CAT"));
-            assertEquals(this.dbName, this.rs.getString("TABLE_SCHEM"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_SCHEM"));
         } else {
-            assertEquals(this.dbName, this.rs.getString("TABLE_CAT"));
+            assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("TABLE_CAT"));
             assertNull(this.rs.getString("TABLE_SCHEM"));
         }
         assertEquals(tableName, this.rs.getString("TABLE_NAME"));
@@ -1837,8 +1810,6 @@ public class MetadataTest extends BaseTestCase {
             for (boolean dbMapsToSchema : new boolean[] { false, true }) {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
-
-                System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
 
                 Connection conn1 = null;
                 try {

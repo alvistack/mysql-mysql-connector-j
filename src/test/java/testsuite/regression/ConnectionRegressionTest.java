@@ -5433,12 +5433,10 @@ public class ConnectionRegressionTest extends BaseTestCase {
             fail("The connection attempt should have timed out.");
 
         } catch (InterruptedException e) {
-            e.printStackTrace();
             fail("Failed to establish a connection with mock server.");
 
         } catch (ExecutionException e) {
             if (e.getCause() instanceof SQLException) {
-                e.printStackTrace();
                 assertTrue(e.getCause().getMessage().startsWith("Communications link failure")
                         || e.getCause().getMessage().equals(Messages.getString("Connection.LoginTimeout")));
 
@@ -10660,7 +10658,7 @@ public class ConnectionRegressionTest extends BaseTestCase {
 
         ((com.mysql.cj.jdbc.ConnectionImpl) c).isServerLocal();
 
-        String ps = ((MysqlConnection) c).getSession().getServerSession().getServerVariable("performance_schema");
+        String ps = c.getSession().getServerSession().getServerVariable("performance_schema");
         if (versionMeetsMinimum(5, 6, 0) // performance_schema.threads in MySQL 5.5 does not contain PROCESSLIST_HOST column
                 && ps != null && ("1".contentEquals(ps) || "ON".contentEquals(ps))) {
             assertTrue(qi.cnt == 0, "SHOW PROCESSLIST was issued by isServerLocal()");
@@ -11174,6 +11172,8 @@ public class ConnectionRegressionTest extends BaseTestCase {
         String systemUsername = System.getProperty("user.name");
         assumeFalse(StringUtils.isNullOrEmpty(systemUsername), "This test can't proceed with empty system user name.");
 
+        String quotedSystemUserName = "'" + systemUsername + "'";
+
         this.rs = this.stmt.executeQuery("SELECT user FROM mysql.user WHERE user = '" + systemUsername + "'");
         assumeFalse(this.rs.next(), "Probably user 'root' and there is one already. This test can't proceed with it.");
 
@@ -11185,8 +11185,8 @@ public class ConnectionRegressionTest extends BaseTestCase {
                         () -> getConnectionWithProps(String.format("jdbc:mysql://%s:%s", getHostFromTestsuiteUrl(), getPortFromTestsuiteUrl()),
                                 "sslMode=DISABLED,allowPublicKeyRetrieval=true,defaultAuthenticationPlugin=" + authPlugin));
 
-                createUser(systemUsername, "IDENTIFIED WITH " + authPlugin);
-                this.stmt.execute("GRANT ALL ON *.* TO " + systemUsername);
+                createUser(quotedSystemUserName, "IDENTIFIED WITH " + authPlugin);
+                this.stmt.execute("GRANT ALL ON *.* TO " + quotedSystemUserName);
 
                 Connection testConn = getConnectionWithProps(String.format("jdbc:mysql://%s:%s", getHostFromTestsuiteUrl(), getPortFromTestsuiteUrl()),
                         "sslMode=DISABLED,allowPublicKeyRetrieval=true,defaultAuthenticationPlugin=" + authPlugin);
@@ -11195,7 +11195,7 @@ public class ConnectionRegressionTest extends BaseTestCase {
                 assertTrue(testRs.next());
                 assertTrue(testRs.getString(1).startsWith(systemUsername));
 
-                dropUser(systemUsername);
+                dropUser(quotedSystemUserName);
                 authenticationPluginsTested.add(authPlugin);
             }
         }
@@ -11215,6 +11215,8 @@ public class ConnectionRegressionTest extends BaseTestCase {
         String systemUsername = System.getProperty("user.name");
         assumeFalse(StringUtils.isNullOrEmpty(systemUsername), "This test can't proceed with empty system user name.");
 
+        String quotedSystemUsername = "'" + systemUsername + "'";
+
         this.rs = this.stmt.executeQuery("SELECT user FROM mysql.user WHERE user = '" + systemUsername + "'");
         assumeFalse(this.rs.next(), "Probably user 'root' and there is one already. This test can't proceed with it.");
 
@@ -11226,8 +11228,8 @@ public class ConnectionRegressionTest extends BaseTestCase {
                         () -> getConnectionWithProps(String.format("jdbc:mysql://%s:%s", getHostFromTestsuiteUrl(), getPortFromTestsuiteUrl()),
                                 "defaultAuthenticationPlugin=" + authPlugin + ",sslMode=DISABLED,allowPublicKeyRetreival=true"));
 
-                createUser(systemUsername, "IDENTIFIED WITH " + authPlugin + " BY 'testpwd'");
-                this.stmt.execute("GRANT ALL ON *.* TO " + systemUsername);
+                createUser(quotedSystemUsername, "IDENTIFIED WITH " + authPlugin + " BY 'testpwd'");
+                this.stmt.execute("GRANT ALL ON *.* TO " + quotedSystemUsername);
 
                 Connection testConn = getConnectionWithProps(String.format("jdbc:mysql://%s:%s", getHostFromTestsuiteUrl(), getPortFromTestsuiteUrl()),
                         "defaultAuthenticationPlugin=" + authPlugin + ",password=testpwd");
@@ -11236,7 +11238,7 @@ public class ConnectionRegressionTest extends BaseTestCase {
                 assertTrue(testRs.next());
                 assertTrue(testRs.getString(1).startsWith(systemUsername));
 
-                dropUser(systemUsername);
+                dropUser(quotedSystemUsername);
                 authenticationPluginsTested.add(authPlugin);
             }
         }
@@ -11392,10 +11394,11 @@ public class ConnectionRegressionTest extends BaseTestCase {
 
         assertEquals(listener.changes, ((MysqlConnection) c).getServerSessionStateController().getSessionStateChanges());
 
+        String expectedDbName = this.conn.getMetaData().storesLowerCaseIdentifiers() ? this.dbName.toLowerCase() : this.dbName;
         for (SessionStateChange change : ((MysqlConnection) c).getServerSessionStateController().getSessionStateChanges().getSessionStateChangesList()) {
             if (change.getType() == ServerSessionStateController.SESSION_TRACK_SCHEMA) {
                 cnt1++;
-                assertEquals(this.dbName, change.getValues().get(0));
+                assertEquals(expectedDbName, change.getValues().get(0));
             } else if (change.getType() == ServerSessionStateController.SESSION_TRACK_STATE_CHANGE) {
                 cnt2++;
                 assertEquals("1", change.getValues().get(0));

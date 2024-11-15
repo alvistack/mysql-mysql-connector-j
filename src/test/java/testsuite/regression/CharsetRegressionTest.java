@@ -54,7 +54,6 @@ import com.mysql.cj.conf.PropertyDefinitions.DatabaseTerm;
 import com.mysql.cj.conf.PropertyDefinitions.SslMode;
 import com.mysql.cj.conf.PropertyKey;
 import com.mysql.cj.exceptions.ExceptionFactory;
-import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import com.mysql.cj.interceptors.QueryInterceptor;
 import com.mysql.cj.jdbc.JdbcConnection;
 import com.mysql.cj.log.Log;
@@ -312,8 +311,11 @@ public class CharsetRegressionTest extends BaseTestCase {
         Properties props = getPropertiesFromTestsuiteUrl();
         String dbname = props.getProperty(PropertyKey.DBNAME.getKeyName());
         if (dbname == null) {
-            assertTrue(false, "No database selected");
+            fail("No database selected");
         }
+
+        boolean lowerCaseIds = this.conn.getMetaData().storesLowerCaseIdentifiers();
+        String expectedDbName = lowerCaseIds ? dbname.toLowerCase() : dbname;
 
         props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), SslMode.DISABLED.name());
@@ -328,10 +330,7 @@ public class CharsetRegressionTest extends BaseTestCase {
             testRs = testSt.executeQuery("SELECT * FROM `" + dbname + "`.`\u307b\u3052\u307b\u3052`");
         } catch (SQLException e1) {
             if (e1.getClass().getName().endsWith("SQLSyntaxErrorException")) {
-                assertEquals("Table '" + dbname + ".\u307B\u3052\u307b\u3052' doesn't exist", e1.getMessage());
-            } else if (e1.getErrorCode() == MysqlErrorNumbers.ER_FILE_NOT_FOUND) {
-                // this could happen on Windows with 5.5 and 5.6 servers where BUG#14642248 exists
-                assertTrue(e1.getMessage().contains("Can't find file"));
+                assertEquals("Table '" + expectedDbName + ".\u307B\u3052\u307b\u3052' doesn't exist", e1.getMessage());
             } else {
                 throw e1;
             }
@@ -347,12 +346,8 @@ public class CharsetRegressionTest extends BaseTestCase {
                 testRs = testSt.executeQuery("SELECT * FROM `" + dbname + "`.`\u307b\u3052\u307b\u3052`");
             } catch (SQLException e2) {
                 if (e2.getClass().getName().endsWith("SQLSyntaxErrorException")) {
-                    assertEquals("\u0422\u0430\u0431\u043b\u0438\u0446\u0430 '" + dbname
+                    assertEquals("\u0422\u0430\u0431\u043b\u0438\u0446\u0430 '" + expectedDbName
                             + ".\u307b\u3052\u307b\u3052' \u043d\u0435 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u0435\u0442", e2.getMessage());
-                } else if (e2.getErrorCode() == MysqlErrorNumbers.ER_FILE_NOT_FOUND) {
-                    // this could happen on Windows with 5.5 and 5.6 servers where BUG#14642248 exists
-                    assertTrue(e2.getMessage().indexOf("\u0444\u0430\u0439\u043b") > -1,
-                            "File not found error message should be russian but is this one: " + e2.getMessage());
                 } else {
                     throw e2;
                 }
@@ -380,10 +375,7 @@ public class CharsetRegressionTest extends BaseTestCase {
             fail("Exception should be thrown for attemping to query non-existing table");
         } catch (SQLException e1) {
             if (e1.getClass().getName().endsWith("SQLSyntaxErrorException")) {
-                assertEquals("Table '" + dbname + ".\u307B\u3052\u307b\u3052' doesn't exist", e1.getMessage());
-            } else if (e1.getErrorCode() == MysqlErrorNumbers.ER_FILE_NOT_FOUND) {
-                // this could happen on Windows with 5.5 and 5.6 servers where BUG#14642248 exists
-                assertTrue(e1.getMessage().contains("Can't find file"));
+                assertEquals("Table '" + expectedDbName + ".\u307B\u3052\u307b\u3052' doesn't exist", e1.getMessage());
             } else {
                 throw e1;
             }

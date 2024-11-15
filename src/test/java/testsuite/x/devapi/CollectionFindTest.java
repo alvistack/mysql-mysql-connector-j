@@ -52,6 +52,7 @@ import com.mysql.cj.ServerVersion;
 import com.mysql.cj.exceptions.MysqlErrorNumbers;
 import com.mysql.cj.exceptions.WrongArgumentException;
 import com.mysql.cj.protocol.x.XProtocolError;
+import com.mysql.cj.util.Util;
 import com.mysql.cj.xdevapi.AddResult;
 import com.mysql.cj.xdevapi.Collection;
 import com.mysql.cj.xdevapi.DbDoc;
@@ -3819,8 +3820,10 @@ public class CollectionFindTest extends BaseCollectionTestCase {
                 assertFalse(docs.hasNext());
             } else if (i % 3 == 1) {
                 final int i1 = i;
-                assertThrows(ExecutionException.class, "com.mysql.cj.protocol.x.XProtocolError: ERROR 1305 \\(42000\\) FUNCTION " + this.schema.getName()
-                        + ".NON_EXISTING_FUNCTION does not exist", () -> futures.get(i1).get());
+                String schemaName = Util.isRunningOnWindows() ? this.schema.getName().toLowerCase() : this.schema.getName();
+                assertThrows(ExecutionException.class,
+                        "com.mysql.cj.protocol.x.XProtocolError: ERROR 1305 \\(42000\\) FUNCTION " + schemaName + ".NON_EXISTING_FUNCTION does not exist",
+                        () -> futures.get(i1).get());
             } else {
                 docs = futures.get(i).get();
                 doc = docs.next();

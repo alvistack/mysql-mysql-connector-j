@@ -74,64 +74,63 @@ public class CancelQueryTaskImpl extends TimerTask implements CancelQueryTask {
                 }
 
                 try {
-                    if (CancelQueryTaskImpl.this.queryTimeoutKillsConnection) {
-                        localQueryToCancel.setCancelStatus(CancelStatus.CANCELED_BY_TIMEOUT);
-                        session.invokeCleanupListeners(new OperationCancelledException(Messages.getString("Statement.ConnectionKilledDueToTimeout")));
-                    } else {
-                        localQueryToCancel.getCancelTimeoutLock().lock();
+                    localQueryToCancel.getCancelTimeoutLock().lock();
+                    try {
+                        long origConnId = session.getThreadId();
+                        HostInfo hostInfo = session.getHostInfo();
+                        String database = hostInfo.getDatabase();
+                        String user = hostInfo.getUser();
+                        String password = hostInfo.getPassword();
+
+                        NativeSession newSession = null;
                         try {
-                            long origConnId = session.getThreadId();
-                            HostInfo hostInfo = session.getHostInfo();
-                            String database = hostInfo.getDatabase();
-                            String user = hostInfo.getUser();
-                            String password = hostInfo.getPassword();
+                            newSession = new NativeSession(hostInfo, session.getPropertySet());
 
-                            NativeSession newSession = null;
-                            try {
-                                newSession = new NativeSession(hostInfo, session.getPropertySet());
+                            TelemetrySpan span = newSession.getTelemetryHandler().startSpan(TelemetrySpanName.CANCEL_QUERY);
+                            try (TelemetryScope scope = span.makeCurrent()) {
+                                span.setAttribute(TelemetryAttribute.DB_NAME, database);
+                                span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_KILL);
+                                span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_KILL + TelemetryAttribute.STATEMENT_SUFFIX);
+                                span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
+                                span.setAttribute(TelemetryAttribute.DB_USER, user);
+                                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
+                                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
 
-                                TelemetrySpan span = newSession.getTelemetryHandler().startSpan(TelemetrySpanName.CANCEL_QUERY);
-                                try (TelemetryScope scope = span.makeCurrent()) {
-                                    span.setAttribute(TelemetryAttribute.DB_NAME, database);
-                                    span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_KILL);
-                                    span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_KILL + TelemetryAttribute.STATEMENT_SUFFIX);
-                                    span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                                    span.setAttribute(TelemetryAttribute.DB_USER, user);
-                                    span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                                    span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                                newSession.connect(hostInfo, user, password, database, 30000, new TransactionEventHandler() {
 
-                                    newSession.connect(hostInfo, user, password, database, 30000, new TransactionEventHandler() {
+                                    @Override
+                                    public void transactionCompleted() {
+                                    }
 
-                                        @Override
-                                        public void transactionCompleted() {
-                                        }
+                                    @Override
+                                    public void transactionBegun() {
+                                    }
 
-                                        @Override
-                                        public void transactionBegun() {
-                                        }
-
-                                    });
-                                    newSession.getProtocol().sendCommand(new NativeMessageBuilder(newSession.getServerSession().supportsQueryAttributes())
-                                            .buildComQuery(newSession.getSharedSendPacket(), newSession, "KILL QUERY " + origConnId), false, 0);
-                                } catch (Throwable t) {
-                                    span.setError(t);
-                                    throw t;
-                                } finally {
-                                    span.end();
-                                }
+                                });
+                                newSession.getProtocol().sendCommand(new NativeMessageBuilder(newSession.getServerSession().supportsQueryAttributes())
+                                        .buildComQuery(newSession.getSharedSendPacket(), newSession, "KILL QUERY " + origConnId), false, 0);
+                            } catch (Throwable t) {
+                                span.setError(t);
+                                throw t;
                             } finally {
-                                try {
-                                    newSession.forceClose();
-                                } catch (Throwable t) {
-                                    // no-op.
-                                }
+                                span.end();
                             }
-                            localQueryToCancel.setCancelStatus(CancelStatus.CANCELED_BY_TIMEOUT);
                         } finally {
-                            localQueryToCancel.getCancelTimeoutLock().unlock();
+                            try {
+                                newSession.forceClose();
+                            } catch (Throwable t) {
+                                // no-op.
+                            }
                         }
+                        localQueryToCancel.setCancelStatus(CancelStatus.CANCELED_BY_TIMEOUT);
+                    } finally {
+                        localQueryToCancel.getCancelTimeoutLock().unlock();
                     }
-                    // } catch (NullPointerException npe) {
+
+                    if (CancelQueryTaskImpl.this.queryTimeoutKillsConnection) {
+                        session.invokeCleanupListeners(new OperationCancelledException(Messages.getString("Statement.ConnectionKilledDueToTimeout")));
+                    }
+                } catch (NullPointerException npe) {
                     // Case when connection closed while starting to cancel.
                     // We can't easily synchronize this, because then one thread can't cancel() a running query.
                     // Ignore, we shouldn't re-throw this, because the connection's already closed, so the statement has been timed out.

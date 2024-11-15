@@ -2081,34 +2081,39 @@ public class ConnectionTest extends BaseTestCase {
             // Loading files from invalid paths fails with expected exception..
             props.setProperty(PropertyKey.allowLoadLocalInfileInPath.getKeyName(), tmpDir1.toString());
             try (Connection testConn = getConnectionWithProps(props)) {
+                String dataPath = Util.isRunningOnWindows() ? ".*" + tmpFile2.getParent().getFileName() + "\\\\" + tmpFile2.getFileName() : dataPath2;
                 Statement testStmt = testConn.createStatement();
-                assertThrows(SQLException.class, "(?i)The file '" + dataPath2 + "' is not under the safe path '.*'\\.",
+                assertThrows(SQLException.class, "(?i)The file '" + dataPath + "' is not under the safe path '.*'\\.",
                         () -> testStmt.execute("LOAD DATA LOCAL INFILE '" + fileRef2 + "' INTO TABLE testAllowLoadLocalInfileInPath"));
             }
             props.setProperty(PropertyKey.allowLoadLocalInfileInPath.getKeyName(), tmpSDir1.toString());
             try (Connection testConn = getConnectionWithProps(props)) {
+                String dataPath = Util.isRunningOnWindows() ? ".*" + tmpFile2.getParent().getFileName() + "\\\\" + tmpFile2.getFileName() : dataPath2;
                 Statement testStmt = testConn.createStatement();
-                assertThrows(SQLException.class, "(?i)The file '" + dataPath2 + "' is not under the safe path '.*'\\.",
+                assertThrows(SQLException.class, "(?i)The file '" + dataPath + "' is not under the safe path '.*'\\.",
                         () -> testStmt.execute("LOAD DATA LOCAL INFILE '" + fileRef2 + "' INTO TABLE testAllowLoadLocalInfileInPath"));
             }
             props.setProperty(PropertyKey.allowLoadLocalInfileInPath.getKeyName(), tmpSSDir1.toString());
             try (Connection testConn = getConnectionWithProps(props)) {
+                String dataPath = Util.isRunningOnWindows() ? ".*" + tmpFile2.getParent().getFileName() + "\\\\" + tmpFile2.getFileName() : dataPath2;
                 Statement testStmt = testConn.createStatement();
-                assertThrows(SQLException.class, "(?i)The file '" + dataPath2 + "' is not under the safe path '.*'\\.",
+                assertThrows(SQLException.class, "(?i)The file '" + dataPath + "' is not under the safe path '.*'\\.",
                         () -> testStmt.execute("LOAD DATA LOCAL INFILE '" + fileRef2 + "' INTO TABLE testAllowLoadLocalInfileInPath"));
             }
             props.setProperty(PropertyKey.allowLoadLocalInfileInPath.getKeyName(),
                     tmpDir2.toString() + File.separator + ".." + File.separator + tmpDir1.getFileName());
             try (Connection testConn = getConnectionWithProps(props)) {
+                String dataPath = Util.isRunningOnWindows() ? ".*" + tmpFile2.getParent().getFileName() + "\\\\" + tmpFile2.getFileName() : dataPath2;
                 Statement testStmt = testConn.createStatement();
-                assertThrows(SQLException.class, "(?i)The file '" + dataPath2 + "' is not under the safe path '.*'\\.",
+                assertThrows(SQLException.class, "(?i)The file '" + dataPath + "' is not under the safe path '.*'\\.",
                         () -> testStmt.execute("LOAD DATA LOCAL INFILE '" + fileRef2 + "' INTO TABLE testAllowLoadLocalInfileInPath"));
             }
             if (!skipLinkCheck) {
                 props.setProperty(PropertyKey.allowLoadLocalInfileInPath.getKeyName(), tmpLink2.toString());
                 try (Connection testConn = getConnectionWithProps(props)) {
+                    String dataPath = Util.isRunningOnWindows() ? ".*" + tmpFile2.getParent().getFileName() + "\\\\" + tmpFile2.getFileName() : dataPath2;
                     Statement testStmt = testConn.createStatement();
-                    assertThrows(SQLException.class, "(?i)The file '" + dataPath2 + "' is not under the safe path '.*'\\.",
+                    assertThrows(SQLException.class, "(?i)The file '" + dataPath + "' is not under the safe path '.*'\\.",
                             () -> testStmt.execute("LOAD DATA LOCAL INFILE '" + fileRef2 + "' INTO TABLE testAllowLoadLocalInfileInPath"));
                 }
             }
