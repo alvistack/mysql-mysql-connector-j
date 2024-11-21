@@ -1069,8 +1069,6 @@ public class MetaDataRegressionTest extends BaseTestCase {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), databaseTerm);
 
-                // System.out.println("useInformationSchema=" + useIS + ", databaseTerm=" + databaseTerm);
-
                 Connection con = getConnectionWithProps(props);
 
                 String db = databaseTerm.contentEquals("SCHEMA") ? con.getSchema() : con.getCatalog();
@@ -2136,8 +2134,6 @@ public class MetaDataRegressionTest extends BaseTestCase {
             for (boolean dbMapsToSchema : new boolean[] { false, true }) {
                 props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "" + useIS);
                 props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbMapsToSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
-
-                // System.out.println("useIS=" + useIS + ", dbMapsToSchema=" + dbMapsToSchema);
 
                 Connection conn1 = null;
                 try {
@@ -4272,13 +4268,6 @@ public class MetaDataRegressionTest extends BaseTestCase {
         DatabaseMetaData dbmd = this.conn.getMetaData();
         this.rs = dbmd.getCatalogs();
 
-        // System.out.println("Catalogs:");
-        // System.out.println("--------------------------------------------------");
-        // while (this.rs.next()) {
-        //     System.out.println("\t" + this.rs.getString(1));
-        // }
-        // this.rs.beforeFirst();
-
         // check the relative position of each element in the result set compared to the previous element.
         String previousDb = "";
         while (this.rs.next()) {
@@ -5753,6 +5742,45 @@ public class MetaDataRegressionTest extends BaseTestCase {
                 assertEquals("`param``Bug116113`", this.rs.getString("COLUMN_NAME"));
             }
         } while ((pedantic = !pedantic) || (useIS = !useIS) || (dbIsSchema = !dbIsSchema));
+    }
+
+    /**
+     * Tests fix for Bug#103437 (Bug#32807360), Syntax error when calling PreparedStatement.getMetadata() with LIMIT placeholded.
+     *
+     * @throws Exception
+     */
+    @Test
+    void testBug103437() throws Exception {
+        this.pstmt = this.conn.prepareStatement("SELECT ?, ? WHERE 1 = ? LIMIT ? OFFSET ?");
+        ResultSetMetaData md = this.pstmt.getMetaData();
+        assertEquals(2, md.getColumnCount());
+        this.pstmt = this.conn.prepareStatement("SELECT ?, ? WHERE 1 = ? LIMIT ?");
+        md = this.pstmt.getMetaData();
+        assertEquals(2, md.getColumnCount());
+        this.pstmt = this.conn.prepareStatement("SELECT ?, ? WHERE 1 = ? LIMIT ?, ?");
+        md = this.pstmt.getMetaData();
+        assertEquals(2, md.getColumnCount());
+
+        createTable("testBug103437", "(id INT)");
+        Properties props = new Properties();
+        props.setProperty(PropertyKey.rewriteBatchedStatements.getKeyName(), "true");
+        try (Connection testConn = getConnectionWithProps(props)) {
+            this.pstmt = testConn.prepareStatement("INSERT INTO testBug103437 VALUES (?)");
+            for (int i = 1; i <= 10; i++) {
+                this.pstmt.setInt(1, i);
+                this.pstmt.addBatch();
+            }
+            this.pstmt.executeBatch();
+            assertNull(this.pstmt.getMetaData());
+
+            this.pstmt = testConn.prepareStatement("SELECT id, ? FROM testBug103437");
+            for (int i = 1; i <= 10; i++) {
+                this.pstmt.setInt(1, i);
+                this.pstmt.addBatch();
+            }
+            md = this.pstmt.getMetaData();
+            assertEquals(2, md.getColumnCount());
+        }
     }
 
 }

@@ -20,8 +20,14 @@
 
 package com.mysql.cj;
 
+import static com.mysql.cj.PlaceholderPurpose.GENERIC;
+import static com.mysql.cj.PlaceholderPurpose.INSERT_VALUES;
+import static com.mysql.cj.PlaceholderPurpose.LIMIT_AND_OFFSET;
+
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
 
 import com.mysql.cj.conf.PropertyKey;
 import com.mysql.cj.exceptions.ExceptionFactory;
@@ -39,10 +45,14 @@ public class QueryInfo {
     private static final String CLOSING_MARKERS = "`'\"";
     private static final String OVERRIDING_MARKERS = "";
 
+    private static final String SELECT_STATEMENT = "SELECT";
+    private static final String TABLE_STATEMENT = "TABLE";
     private static final String INSERT_STATEMENT = "INSERT";
     private static final String REPLACE_STATEMENT = "REPLACE";
     private static final String MULTIPLE_QUERIES_TAG = "(multiple queries)";
 
+    private static final String LIMIT_CLAUSE = "LIMIT";
+    private static final String OFFSET_CLAUSE = "OFFSET";
     private static final String VALUE_CLAUSE = "VALUE";
     private static final String AS_CLAUSE = "AS";
     private static final String[] ODKU_CLAUSE = new String[] { "ON", "DUPLICATE", "KEY", "UPDATE" };
@@ -65,6 +75,7 @@ public class QueryInfo {
     private int valuesClauseLength = -1;
     private ArrayList<Integer> valuesEndpoints = new ArrayList<>();
     private byte[][] staticSqlParts = null;
+    private List<PlaceholderPurpose> placeholderPurposes = new ArrayList<>();
 
     /**
      * Constructs a {@link QueryInfo} object for the given query or multi-query. The parsed result of this query allows to determine the location of the
@@ -97,8 +108,7 @@ public class QueryInfo {
         StringInspector strInspector = new StringInspector(this.sql, OPENING_MARKERS, CLOSING_MARKERS, OVERRIDING_MARKERS,
                 noBackslashEscapes ? SearchMode.__MRK_COM_MYM_HNT_WS : SearchMode.__BSE_MRK_COM_MYM_HNT_WS);
 
-        // Skip comments at the beginning of queries.
-        this.queryStartPos = strInspector.indexOfNextAlphanumericChar();
+        this.queryStartPos = strInspector.indexOfNextAlphanumericChar(); // Skip comments at the beginning of queries.
         if (this.queryStartPos == -1) {
             this.queryStartPos = this.queryLength;
         } else {
@@ -118,15 +128,31 @@ public class QueryInfo {
             this.statementKeyword = sbStatementKeyword.toString();
         }
 
+        // Check if should look for LIMIT and OFFSET clauses, i.e., if it is a SELECT or TABLE statement.
+        boolean lookForLimitAndOffset = false;
+
         // Only INSERT and REPLACE statements support multi-values clause rewriting.
-        boolean isInsert = INSERT_STATEMENT.equalsIgnoreCase(this.statementKeyword);
-        boolean isReplace = !isInsert && REPLACE_STATEMENT.equalsIgnoreCase(this.statementKeyword);
+        boolean isInsert = false;
+        boolean isReplace = false;
+
+        switch (this.statementKeyword) {
+            case SELECT_STATEMENT:
+            case TABLE_STATEMENT:
+                lookForLimitAndOffset = true;
+                break;
+            case INSERT_STATEMENT:
+                isInsert = true;
+                break;
+            case REPLACE_STATEMENT:
+                isReplace = true;
+                break;
+        }
 
         // Check if the statement has potential to be rewritten as a multi-values clause statement, i.e., if it is an INSERT or REPLACE statement and
         // 'rewriteBatchedStatements' is enabled.
         boolean rewritableAsMultiValues = (isInsert || isReplace) && rewriteBatchedStatements;
 
-        // Check if should look for ON DUPLICATE KEY UPDATE CLAUSE, i.e., if it is an INSERT statement and 'dontCheckOnDuplicateKeyUpdateInSQL' is disabled.
+        // Check if should look for ON DUPLICATE KEY UPDATE clause, i.e., if it is an INSERT statement and 'dontCheckOnDuplicateKeyUpdateInSQL' is disabled.
         // 'rewriteBatchedStatements=true' cancels any value specified in 'dontCheckOnDuplicateKeyUpdateInSQL'.
         boolean lookForOnDuplicateKeyUpdate = isInsert && (!dontCheckOnDuplicateKeyUpdateInSQL || rewriteBatchedStatements);
 
@@ -139,6 +165,8 @@ public class QueryInfo {
         boolean valuesClauseEndFound = false;
         boolean withinValuesClause = false;
         boolean valueStrMayBeTableName = true;
+        boolean matchedLimitClause = false;
+        boolean withinLimitClause = false;
         int parensLevel = 0;
         int matchEnd = -1;
         int lastPos = -1;
@@ -158,13 +186,14 @@ public class QueryInfo {
                 int endpointEnd = strInspector.getPosition();
                 staticEndpoints.add(generalEndpointStart);
                 staticEndpoints.add(endpointEnd);
+                this.placeholderPurposes.add(withinValuesClause ? INSERT_VALUES : withinLimitClause ? LIMIT_AND_OFFSET : GENERIC);
                 strInspector.incrementPosition();
                 generalEndpointStart = strInspector.getPosition(); // Next section starts after the placeholder.
 
                 if (rewritableAsMultiValues) {
-                    if (!valuesClauseBeginFound) { // There's a placeholder before the VALUES clause.
+                    if (!valuesClauseBeginFound) { // There's a placeholder before the VALUE[S] clause.
                         rewritableAsMultiValues = false;
-                    } else if (valuesClauseEndFound) { // There's a placeholder after the end of the VALUES clause.
+                    } else if (valuesClauseEndFound) { // There's a placeholder after the end of the VALUE[S] clause.
                         rewritableAsMultiValues = false;
                     } else if (withinValuesClause) {
                         this.valuesEndpoints.add(valuesEndpointStart);
@@ -175,6 +204,8 @@ public class QueryInfo {
 
             } else if (currChar == ';') { // Multi-query SQL.
                 valueStrMayBeTableName = false; // At this point a string "VALUE" cannot be a table name.
+                matchedLimitClause = false;
+                withinLimitClause = false;
 
                 strInspector.incrementPosition();
                 if (strInspector.indexOfNextNonWsChar() != -1) {
@@ -190,6 +221,8 @@ public class QueryInfo {
                         parensLevel = 0;
                     }
 
+                    isInsert = false;
+                    isReplace = false;
                     // Check if continue looking for ON DUPLICATE KEY UPDATE.
                     if (dontCheckOnDuplicateKeyUpdateInSQL || this.containsOnDuplicateKeyUpdate) {
                         lookForOnDuplicateKeyUpdate = false;
@@ -203,19 +236,32 @@ public class QueryInfo {
                         }
                         lookForOnDuplicateKeyUpdate = isInsert;
                     }
+
+                    // Check if continue looking for LIMIT and OFFSET.
+                    if (!isInsert && !isReplace && ((matchEnd = strInspector.matchesIgnoreCase(SELECT_STATEMENT)) != -1
+                            || (matchEnd = strInspector.matchesIgnoreCase(TABLE_STATEMENT)) != -1)) {
+                        strInspector.incrementPosition(matchEnd - strInspector.getPosition() - 1); // Advance to the end and capture last character.
+                        currPos = strInspector.getPosition();
+                        currChar = strInspector.getChar();
+                        strInspector.incrementPosition();
+
+                        lookForLimitAndOffset = true;
+                    } else {
+                        lookForLimitAndOffset = false;
+                    }
                 }
 
             } else {
                 if (rewritableAsMultiValues) {
-                    if ((!valuesClauseBeginFound || valueStrMayBeTableName) && strInspector.matchesIgnoreCase(VALUE_CLAUSE) != -1) { // VALUE(S) clause found.
-                        boolean leftBound = currPos > lastPos + 1 || lastChar == ')'; // ')' would mark the ending of the columns list.
+                    if ((!valuesClauseBeginFound || valueStrMayBeTableName) && strInspector.matchesIgnoreCase(VALUE_CLAUSE) != -1) { // VALUE[S] clause found.
+                        boolean leftBounded = currPos > lastPos + 1 || lastChar == ')'; // ')' would mark the ending of the columns list: "...)VALUES...".
 
                         strInspector.incrementPosition(VALUE_CLAUSE.length() - 1); // Advance to the end of "VALUE" and capture last character.
                         currPos = strInspector.getPosition();
                         currChar = strInspector.getChar();
                         strInspector.incrementPosition();
                         boolean matchedValues = false;
-                        if (strInspector.matchesIgnoreCase("S") != -1) { // Check for the "S" in "VALUE(S)" and advance 1 more character if needed.
+                        if (strInspector.matchesIgnoreCase("S") != -1) { // Check for the "S" in "VALUE(S)" and advance 1 more character if so.
                             currPos = strInspector.getPosition();
                             currChar = strInspector.getChar();
                             strInspector.incrementPosition();
@@ -223,10 +269,10 @@ public class QueryInfo {
                         }
 
                         int endPos = strInspector.getPosition();
-                        int nextPos = strInspector.indexOfNextChar(); // Position on the first meaningful character after VALUE(S).
-                        boolean rightBound = nextPos > endPos || strInspector.getChar() == '('; // '(' would mark the beginning of the VALUE(S) list.
+                        int nextPos = strInspector.indexOfNextChar(); // Position on the first meaningful character after VALUE[S].
+                        boolean rightBounded = nextPos > endPos || strInspector.getChar() == '('; // '(' would mark the beginning of VALUE[S]: "... VALUES(...".
 
-                        if (leftBound && rightBound) { // VALUE(S) keyword must not be part of another string, such as a table or column name.
+                        if (leftBounded && rightBounded) { // VALUE[S] keyword must not be part of another string, such as a table or column name.
                             if (matchedValues) {
                                 valueStrMayBeTableName = false; // At this point a string "VALUE" cannot be a table name.
                             }
@@ -250,9 +296,10 @@ public class QueryInfo {
                             parensLevel = 0; // Keep going, not checking for syntax validity.
                         }
                         strInspector.incrementPosition();
-                        valuesClauseEnd = strInspector.getPosition(); // It may not be the end of the VALUES clause yet but save it for later.
+                        valuesClauseEnd = strInspector.getPosition(); // It may not be the end of the VALUE[S] clause yet but save it for later.
 
-                    } else if (withinValuesClause && parensLevel == 0 && isInsert && strInspector.matchesIgnoreCase(AS_CLAUSE) != -1) { // End of VALUES clause.
+                    } else if (withinValuesClause && parensLevel == 0 && isInsert //
+                            && strInspector.matchesIgnoreCase(AS_CLAUSE) != -1) { // End of VALUE[S] clause.
                         valueStrMayBeTableName = false; // At this point a string "VALUE" cannot be a table name.
 
                         if (valuesClauseEnd == -1) {
@@ -269,7 +316,7 @@ public class QueryInfo {
                         this.valuesEndpoints.add(valuesClauseEnd);
 
                     } else if (withinValuesClause && parensLevel == 0 && isInsert //
-                            && (matchEnd = strInspector.matchesIgnoreCase(ODKU_CLAUSE)) != -1) { // End of VALUES clause.
+                            && (matchEnd = strInspector.matchesIgnoreCase(ODKU_CLAUSE)) != -1) { // End of VALUE[S] clause.
                         valueStrMayBeTableName = false; // At this point a string "VALUE" cannot be a table name.
 
                         if (valuesClauseEnd == -1) {
@@ -305,6 +352,44 @@ public class QueryInfo {
 
                     this.containsOnDuplicateKeyUpdate = true;
                     lookForOnDuplicateKeyUpdate = false;
+                }
+
+                if (lookForLimitAndOffset) {
+                    if (!matchedLimitClause && currPos == strInspector.getPosition() && (matchEnd = strInspector.matchesIgnoreCase(LIMIT_CLAUSE)) != -1) {
+                        boolean leftBounded = currPos > lastPos + 1 || lastChar == ')'; // ')' would mark the ending of an expression: "... (1=1)LIMIT ...".
+
+                        strInspector.incrementPosition(matchEnd - strInspector.getPosition() - 1); // Advance to the end of "LIMIT" and capture last character.
+                        currPos = strInspector.getPosition();
+                        currChar = strInspector.getChar();
+                        strInspector.incrementPosition();
+
+                        int endPos = strInspector.getPosition();
+                        int nextPos = strInspector.indexOfNextChar(); // Position on the first meaningful character after LIMIT.
+                        boolean rightBounded = nextPos > endPos;
+
+                        if (leftBounded && rightBounded) { // LIMIT keyword must not be part of another string, such as a table or column name.
+                            matchedLimitClause = true;
+                            withinLimitClause = true;
+                        }
+                    } else if (withinLimitClause && currPos == strInspector.getPosition() && (matchEnd = strInspector.matchesIgnoreCase(OFFSET_CLAUSE)) != -1) {
+                        boolean leftBounded = currPos > lastPos + 1;
+
+                        strInspector.incrementPosition(matchEnd - strInspector.getPosition() - 1); // Advance to the end of "OFFSET" and capture last character.
+                        currPos = strInspector.getPosition();
+                        currChar = strInspector.getChar();
+                        strInspector.incrementPosition();
+
+                        int endPos = strInspector.getPosition();
+                        int nextPos = strInspector.indexOfNextChar(); // Position on the first meaningful character after OFFSET.
+                        boolean rightBounded = nextPos > endPos;
+
+                        if (!leftBounded || !rightBounded) { // OFFSET keyword must not be part of another string, such as a table or column name.
+                            withinLimitClause = false;
+                        }
+                    } else if (withinLimitClause) {
+                        // If LIMIT was previously found, it's still possible to find a placeholder while digits or comma keep coming: "LIMIT [_digits_|?], ?".
+                        withinLimitClause = withinLimitClause && currPos == strInspector.getPosition() && (currChar == ',' || Character.isDigit(currChar));
+                    }
                 }
 
                 if (currPos == strInspector.getPosition()) {
@@ -410,6 +495,7 @@ public class QueryInfo {
 
         } else {
             this.staticSqlParts = new byte[this.numberOfPlaceholders + 1][];
+            this.placeholderPurposes = new ArrayList<>(this.numberOfPlaceholders);
 
             // Build the values binding segment: [values_end][comma][values_begin], e.g., "),(".
             int begin = this.baseQueryInfo.valuesEndpoints.get(this.baseQueryInfo.valuesEndpoints.size() - 2);
@@ -435,6 +521,7 @@ public class QueryInfo {
                 }
                 // Add the segment that binds two batches.
                 this.staticSqlParts[p] = bindingSegment;
+                this.placeholderPurposes.addAll(this.baseQueryInfo.placeholderPurposes);
             }
 
             // Tail section: same as in the original query.
@@ -450,6 +537,15 @@ public class QueryInfo {
      */
     public int getNumberOfQueries() {
         return this.numberOfQueries;
+    }
+
+    /**
+     * Returns the number of placeholders found in the query.
+     *
+     * @return the number of placeholders in the query
+     */
+    public int getNumberOfPlaceholders() {
+        return this.numberOfPlaceholders;
     }
 
     /**
@@ -489,6 +585,15 @@ public class QueryInfo {
      */
     public int getValuesClauseLength() {
         return this.baseQueryInfo.valuesClauseLength;
+    }
+
+    /**
+     * Returns a list containing the purpose of each one of the placeholders found according to their positional ordering.
+     *
+     * @return the list of the placeholders purposes.
+     */
+    public List<PlaceholderPurpose> getPlaceholderPurposes() {
+        return Collections.unmodifiableList(this.placeholderPurposes);
     }
 
     /**

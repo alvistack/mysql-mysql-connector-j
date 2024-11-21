@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#103437 (Bug#32807360), Syntax error when calling PreparedStatement.getMetadata() with LIMIT placeholded.
+
   - Fix for Bug#96786 (Bug#30280035), Retrieving streaming result set fails when closeOnCompletion is enabled.
 
   - Fix for Bug#21983318, QUERYTIMEOUT VALUE RESETTING TO 0 AFTER PREPSTMT.EXECUTEBATCH() EXECUTION.

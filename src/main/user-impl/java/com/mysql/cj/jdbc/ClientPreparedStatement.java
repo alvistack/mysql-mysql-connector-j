@@ -41,6 +41,7 @@ import java.sql.Timestamp;
 import java.sql.Wrapper;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.List;
 import java.util.concurrent.locks.Lock;
 
 import com.mysql.cj.BindValue;
@@ -51,6 +52,7 @@ import com.mysql.cj.MysqlType;
 import com.mysql.cj.NativeQueryBindValue;
 import com.mysql.cj.NativeQueryBindings;
 import com.mysql.cj.NativeSession;
+import com.mysql.cj.PlaceholderPurpose;
 import com.mysql.cj.PreparedQuery;
 import com.mysql.cj.Query;
 import com.mysql.cj.QueryBindings;
@@ -1255,37 +1257,23 @@ public class ClientPreparedStatement extends com.mysql.cj.jdbc.StatementImpl imp
         Lock connectionLock = checkClosed().getConnectionLock();
         connectionLock.lock();
         try {
-            //
-            // We could just tack on a LIMIT 0 here no matter what the  statement, and check if a result set was returned or not, but I'm not comfortable with
-            // that, myself, so we take the "safer" road, and only allow metadata for _actual_ SELECTS (but not SHOWs).
-            //
-            // CALL's are trapped further up and you end up with a  CallableStatement anyway.
-            //
-
             if (!isResultSetProducingQuery()) {
                 return null;
             }
 
             JdbcPreparedStatement mdStmt = null;
             java.sql.ResultSet mdRs = null;
-
             if (this.pstmtResultMetaData == null) {
                 try {
                     mdStmt = new ClientPreparedStatement(this.connection, ((PreparedQuery) this.query).getOriginalSql(), getCurrentDatabase(), getQueryInfo());
-
                     mdStmt.setMaxRows(1);
-
-                    int paramCount = ((PreparedQuery) this.query).getParameterCount();
-
-                    for (int i = 1; i <= paramCount; i++) {
-                        mdStmt.setString(i, null);
+                    List<PlaceholderPurpose> placeholderPurposes = getQueryInfo().getPlaceholderPurposes();
+                    for (int i = 0; i < getQueryInfo().getNumberOfPlaceholders(); i++) {
+                        mdStmt.setObject(i + 1, placeholderPurposes.get(i) == PlaceholderPurpose.LIMIT_AND_OFFSET ? 0 : null);
                     }
-
                     boolean hadResults = mdStmt.execute();
-
                     if (hadResults) {
                         mdRs = mdStmt.getResultSet();
-
                         this.pstmtResultMetaData = mdRs.getMetaData();
                     } else {
                         this.pstmtResultMetaData = new ResultSetMetaData(this.session, new Field[0],
@@ -1294,27 +1282,22 @@ public class ClientPreparedStatement extends com.mysql.cj.jdbc.StatementImpl imp
                     }
                 } finally {
                     SQLException sqlExRethrow = null;
-
                     if (mdRs != null) {
                         try {
                             mdRs.close();
                         } catch (SQLException sqlEx) {
                             sqlExRethrow = sqlEx;
                         }
-
                         mdRs = null;
                     }
-
                     if (mdStmt != null) {
                         try {
                             mdStmt.close();
                         } catch (SQLException sqlEx) {
                             sqlExRethrow = sqlEx;
                         }
-
                         mdStmt = null;
                     }
-
                     if (sqlExRethrow != null) {
                         throw sqlExRethrow;
                     }
@@ -1379,7 +1362,7 @@ public class ClientPreparedStatement extends com.mysql.cj.jdbc.StatementImpl imp
         connectionLock.lock();
         try {
 
-            int parameterCount = getQueryInfo().getStaticSqlParts().length - 1;
+            int parameterCount = getQueryInfo().getNumberOfPlaceholders();
             ((PreparedQuery) this.query).setParameterCount(parameterCount);
             ((PreparedQuery) this.query).setQueryBindings(new NativeQueryBindings(parameterCount, this.session, NativeQueryBindValue::new));
             clearParameters();
