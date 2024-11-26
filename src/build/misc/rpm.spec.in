@@ -37,7 +37,6 @@
 # SuSE will not set "dist", others do
 %if 0%{?suse_version} == 1500
 %global dist       .sl15
-%global sles15     1
 %endif
 
 # Disable "reproducible builds"
@@ -84,12 +83,6 @@ BuildRequires:     ant
 
 %if 0%{!?with_java:1}
 BuildRequires:     java-devel >= 1:1.8.0
-%endif
-
-%if 0%{?sles15:1}
-Requires:          java-headless >= 1.8.0
-%else
-Requires:          java-headless >= 1:1.8.0
 %endif
 
 %description
