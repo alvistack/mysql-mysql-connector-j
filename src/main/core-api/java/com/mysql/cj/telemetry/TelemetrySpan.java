@@ -20,6 +20,8 @@
 
 package com.mysql.cj.telemetry;
 
+import java.util.function.Supplier;
+
 /**
  * A telemetry span wrapper that hides all specific details from the underlying telemetry library.
  *
@@ -57,6 +59,20 @@ public interface TelemetrySpan extends AutoCloseable {
      */
     default void setAttribute(TelemetryAttribute key, long value) {
         // Noop.
+    }
+
+    /**
+     * Adds the attribute given by the specified supplier to this telemetry span.
+     *
+     * @param <T>
+     *            the type of the attribute value
+     * @param key
+     *            the key for this attribute
+     * @param valueSupplier
+     *            the supplier for the value for this attribute
+     */
+    default <T> void setAttribute(TelemetryAttribute key, Supplier<T> valueSupplier) {
+        // Noop
     }
 
     /**

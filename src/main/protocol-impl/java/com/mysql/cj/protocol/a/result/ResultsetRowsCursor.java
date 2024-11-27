@@ -94,7 +94,7 @@ public class ResultsetRowsCursor extends AbstractResultsetRows implements Result
     @Override
     public boolean isAfterLast() {
         return this.lastRowFetched && this.currentPositionInFetchedRows + 1 > this.fetchedRows.size()
-                || this.getOwner().getOwningStatementMaxRows() >= 0 && this.currentPositionInEntireResult + 1 > this.getOwner().getOwningStatementMaxRows();
+                || getOwner().getOwningStatementMaxRows() >= 0 && this.currentPositionInEntireResult + 1 > getOwner().getOwningStatementMaxRows();
     }
 
     @Override
@@ -208,13 +208,13 @@ public class ResultsetRowsCursor extends AbstractResultsetRows implements Result
             Session session = this.owner.getSession();
             TelemetrySpan span = session.getTelemetryHandler().startSpan(TelemetrySpanName.STMT_FETCH_PREPARED);
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_NAME, session.getHostInfo().getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, () -> session.getHostInfo().getDatabase());
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, session.getHostInfo().getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> session.getHostInfo().getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 try {
                     boolean oldFirstFetchCompleted = this.firstFetchCompleted;

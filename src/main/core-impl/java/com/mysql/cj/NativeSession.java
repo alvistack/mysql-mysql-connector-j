@@ -218,13 +218,13 @@ public class NativeSession extends CoreSession implements Serializable {
     public void enableMultiQueries() {
         TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.SET_OPTION_MULTI_STATEMENTS, "on");
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             this.protocol.sendCommand(this.commandBuilder.buildComSetOption(((NativeProtocol) this.protocol).getSharedSendPacket(), 0), false, 0);
             // OK_PACKET returned in previous sendCommand() was not processed so keep original transaction state.
@@ -240,13 +240,13 @@ public class NativeSession extends CoreSession implements Serializable {
     public void disableMultiQueries() {
         TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.SET_OPTION_MULTI_STATEMENTS, "off");
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             this.protocol.sendCommand(this.commandBuilder.buildComSetOption(((NativeProtocol) this.protocol).getSharedSendPacket(), 1), false, 0);
             // OK_PACKET returned in previous sendCommand() was not processed so keep original transaction state.
@@ -292,13 +292,13 @@ public class NativeSession extends CoreSession implements Serializable {
     public void shutdownServer() {
         TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.SHUTDOWN);
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SHUTDOWN);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SHUTDOWN + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             if (versionMeetsMinimum(5, 7, 9)) {
                 this.protocol.sendCommand(this.commandBuilder.buildComQuery(getSharedSendPacket(), this, "SHUTDOWN"), false, 0);
@@ -492,13 +492,13 @@ public class NativeSession extends CoreSession implements Serializable {
             TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.LOAD_VARIABLES);
             try (TelemetryScope scope = span.makeCurrent()) {
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, "MySQL");
-                span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SELECT);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SELECT + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 if (versionMeetsMinimum(5, 1, 0)) {
                     StringBuilder queryBuf = new StringBuilder(versionComment).append("SELECT");
@@ -590,13 +590,13 @@ public class NativeSession extends CoreSession implements Serializable {
             if (!variablesToSet.isEmpty()) {
                 TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.SET_VARIABLES);
                 try (TelemetryScope scope = span.makeCurrent()) {
-                    span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+                    span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
                     span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                     span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                     span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                    span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-                    span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                    span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                    span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+                    span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                    span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                     StringBuilder query = new StringBuilder("SET ");
                     String separator = "";
@@ -642,13 +642,13 @@ public class NativeSession extends CoreSession implements Serializable {
         TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.GET_PROCESS_HOST);
         try (TelemetryScope scope = span.makeCurrent()) {
             String dbOperation = TelemetryAttribute.OPERATION_SELECT + "/" + TelemetryAttribute.OPERATION_SHOW;
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             try {
                 long threadId = getThreadId();
@@ -732,13 +732,13 @@ public class NativeSession extends CoreSession implements Serializable {
     public String queryServerVariable(String varName) {
         TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.GET_VARIABLE, varName);
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SELECT);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SELECT + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             try {
                 NativePacketPayload resultPacket = (NativePacketPayload) this.protocol
@@ -880,13 +880,13 @@ public class NativeSession extends CoreSession implements Serializable {
 
         TelemetrySpan span = getTelemetryHandler().startSpan(TelemetrySpanName.PING);
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.hostInfo.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.hostInfo.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_PING);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_PING);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.hostInfo.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.hostInfo.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             long pingMillisLifetime = getPropertySet().getIntegerProperty(PropertyKey.selfDestructOnPingSecondsLifetime).getValue();
             int pingMaxOperations = getPropertySet().getIntegerProperty(PropertyKey.selfDestructOnPingMaxOperations).getValue();

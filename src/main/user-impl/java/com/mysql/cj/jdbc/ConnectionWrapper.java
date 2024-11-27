@@ -144,14 +144,8 @@ public class ConnectionWrapper extends WrapperBase implements JdbcConnection {
     }
 
     @Override
-    public String getDatabase() throws SQLException {
-        try {
-            return this.mc.getDatabase();
-        } catch (SQLException sqlException) {
-            checkAndFireConnectionError(sqlException);
-        }
-
-        return null; // we don't reach this code, compiler can't tell
+    public String getDatabase() {
+        return this.mc.getDatabase();
     }
 
     @Override

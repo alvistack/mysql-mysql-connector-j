@@ -363,13 +363,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
         this.connectionSpan = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.CONNECTION_CREATE);
         this.session.getTelemetryHandler().addLinkTarget(this.connectionSpan);
         try (TelemetryScope scope = this.connectionSpan.makeCurrent()) {
-            this.connectionSpan.setAttribute(TelemetryAttribute.DB_CONNECTION_STRING, getURL());
+            this.connectionSpan.setAttribute(TelemetryAttribute.DB_CONNECTION_STRING, this::getURL);
             this.connectionSpan.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            this.connectionSpan.setAttribute(TelemetryAttribute.DB_USER, getUser());
+            this.connectionSpan.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
             this.connectionSpan.setAttribute(TelemetryAttribute.SERVER_ADDRESS, this.origHostToConnectTo);
             this.connectionSpan.setAttribute(TelemetryAttribute.SERVER_PORT, this.origPortToConnectTo);
-            this.connectionSpan.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            this.connectionSpan.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            this.connectionSpan.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            this.connectionSpan.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             try {
                 String exceptionInterceptorClasses = this.propertySet.getStringProperty(PropertyKey.exceptionInterceptors).getStringValue();
@@ -426,7 +426,7 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                 SocketAddress socketAddress = this.session.getRemoteSocketAddress();
                 if (InetSocketAddress.class.isInstance(socketAddress)) {
                     InetSocketAddress inetSocketAddress = (InetSocketAddress) socketAddress;
-                    this.connectionSpan.setAttribute(TelemetryAttribute.NETWORK_PEER_ADDRESS, inetSocketAddress.getHostName());
+                    this.connectionSpan.setAttribute(TelemetryAttribute.NETWORK_PEER_ADDRESS, inetSocketAddress::getHostName);
                     this.connectionSpan.setAttribute(TelemetryAttribute.NETWORK_PEER_PORT, inetSocketAddress.getPort());
                     this.connectionSpan.setAttribute(TelemetryAttribute.NETWORK_TRANSPORT, TelemetryAttribute.NETWORK_TRANSPORT_TCP);
                 }
@@ -780,13 +780,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
 
                 TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.ROLLBACK);
                 try (TelemetryScope scope = span.makeCurrent()) {
-                    span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                    span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                     span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_ROLLBACK);
                     span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_ROLLBACK);
                     span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                    span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                    span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                    span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                    span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                    span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                    span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                     this.session.execSQL(null, "COMMIT", -1, null, false, this.nullStatementResultSetFactory, null, false);
                 } catch (Throwable t) {
@@ -1565,13 +1565,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                 cStmt.setResultSetConcurrency(resultSetConcurrency);
 
                 String dbOperation = cStmt.getQueryInfo().getStatementKeyword();
-                span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 return cStmt;
             } catch (Throwable t) {
@@ -1694,13 +1694,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                 }
 
                 String dbOperation = pStmt.getQueryInfo().getStatementKeyword();
-                span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 return pStmt;
             } catch (Throwable t) {
@@ -1894,13 +1894,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
         if (!this.propertySet.getBooleanProperty(PropertyKey.paranoid).getValue() && this.session != null) {
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.CONNECTION_RESET);
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_CONNECTION_STRING, getURL());
+                span.setAttribute(TelemetryAttribute.DB_CONNECTION_STRING, this::getURL);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, getUser());
+                span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
                 span.setAttribute(TelemetryAttribute.SERVER_ADDRESS, this.origHostToConnectTo);
                 span.setAttribute(TelemetryAttribute.SERVER_PORT, this.origPortToConnectTo);
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 this.session.getServerSession().getCharsetSettings().configurePreHandshake(true);
                 this.session.resetSessionState();
@@ -2055,13 +2055,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
 
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.ROLLBACK);
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_ROLLBACK);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_ROLLBACK);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 this.session.execSQL(null, "ROLLBACK", -1, null, false, this.nullStatementResultSetFactory, null, false);
             } catch (Throwable t) {
@@ -2181,13 +2181,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                 if (needsSetOnServer) {
                     TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_VARIABLE, "autocommit");
                     try (TelemetryScope scope = span.makeCurrent()) {
-                        span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                        span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                         span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                         span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                         span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                        span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                        span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                        span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                        span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                        span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                        span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                         this.session.execSQL(null, autoCommitFlag ? "SET autocommit=1" : "SET autocommit=0", -1, null, false,
                                 this.nullStatementResultSetFactory, null, false);
@@ -2271,9 +2271,9 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_USE);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_USE + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 String quotedId = this.session.getIdentifierQuoteString();
 
@@ -2295,7 +2295,7 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
     }
 
     @Override
-    public String getDatabase() throws SQLException {
+    public String getDatabase() {
         Lock connectionLock = getConnectionLock();
         connectionLock.lock();
         try {
@@ -2336,13 +2336,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                     TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_TRANSACTION_ACCESS_MODE,
                             readOnlyFlag ? "read-only" : "read-write");
                     try (TelemetryScope scope = span.makeCurrent()) {
-                        span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                        span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                         span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                         span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                         span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                        span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                        span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                        span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                        span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                        span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                        span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                         this.session.execSQL(null, "SET SESSION TRANSACTION " + (readOnlyFlag ? "READ ONLY" : "READ WRITE"), -1, null, false,
                                 this.nullStatementResultSetFactory, null, false);
@@ -2426,13 +2426,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
             if (shouldSendSet) {
                 TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_TRANSACTION_ISOLATION);
                 try (TelemetryScope scope = span.makeCurrent()) {
-                    span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                    span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                     span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                     span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                     span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                    span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                    span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                    span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                    span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                    span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                    span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                     switch (level) {
                         case java.sql.Connection.TRANSACTION_NONE:
@@ -2503,13 +2503,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
                 if (currentSqlMode == null || currentSqlMode.length() == 0 || !strictTransTablesIsSet) {
                     TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_VARIABLE, "sql_mode");
                     try (TelemetryScope scope = span.makeCurrent()) {
-                        span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                        span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                         span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                         span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                         span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                        span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                        span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                        span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                        span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                        span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                        span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                         StringBuilder commandBuf = new StringBuilder("SET sql_mode='");
 
@@ -2688,13 +2688,13 @@ public class ConnectionImpl implements JdbcConnection, SessionEventListener, Ser
             if (this.session.getSessionMaxRows() != max) {
                 TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_VARIABLE, "sql_select_limit");
                 try (TelemetryScope scope = span.makeCurrent()) {
-                    span.setAttribute(TelemetryAttribute.DB_NAME, getDatabase());
+                    span.setAttribute(TelemetryAttribute.DB_NAME, this::getDatabase);
                     span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                     span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                     span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                    span.setAttribute(TelemetryAttribute.DB_USER, getUser());
-                    span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                    span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                    span.setAttribute(TelemetryAttribute.DB_USER, this::getUser);
+                    span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                    span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                     this.session.setSessionMaxRows(max);
                     this.session.execSQL(null,

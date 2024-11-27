@@ -874,13 +874,13 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
             TelemetrySpan span = getSession().getTelemetryHandler().startSpan(TelemetrySpanName.ROUTINE_EXECUTE);
             try (TelemetryScope scope = span.makeCurrent()) {
                 String dbOperation = getQueryInfo().getStatementKeyword();
-                span.setAttribute(TelemetryAttribute.DB_NAME, getCurrentDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getCurrentDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.connection.getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.connection.getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 boolean returnVal = false;
 
@@ -938,13 +938,13 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
             TelemetrySpan span = getSession().getTelemetryHandler().startSpan(TelemetrySpanName.ROUTINE_EXECUTE);
             try (TelemetryScope scope = span.makeCurrent()) {
                 String dbOperation = getQueryInfo().getStatementKeyword();
-                span.setAttribute(TelemetryAttribute.DB_NAME, getCurrentDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getCurrentDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.connection.getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.connection.getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 checkStreamability();
 
@@ -2797,13 +2797,13 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
             TelemetrySpan span = getSession().getTelemetryHandler().startSpan(TelemetrySpanName.ROUTINE_EXECUTE);
             try (TelemetryScope scope = span.makeCurrent()) {
                 String dbOperation = getQueryInfo().getStatementKeyword();
-                span.setAttribute(TelemetryAttribute.DB_NAME, getCurrentDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getCurrentDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.connection.getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.connection.getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 long returnVal = -1;
 
@@ -2842,13 +2842,13 @@ public class CallableStatement extends ClientPreparedStatement implements java.s
         }
         TelemetrySpan span = getSession().getTelemetryHandler().startSpan(TelemetrySpanName.ROUTINE_EXECUTE_BATCH);
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, getCurrentDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, this::getCurrentDatabase);
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_BATCH);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_BATCH);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.connection.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.connection.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             return super.executeLargeBatch();
         } catch (Throwable t) {

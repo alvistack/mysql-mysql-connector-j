@@ -4849,13 +4849,13 @@ public class DatabaseMetaData implements java.sql.DatabaseMetaData {
         TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.STMT_PREPARE);
         try (TelemetryScope scope = span.makeCurrent()) {
             String dbOperation = QueryInfo.getStatementKeyword(sql, this.session.getServerSession().isNoBackslashEscapesSet());
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.conn.getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.conn.getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.conn.getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.conn.getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             // Can't use server-side here as we coerce a lot of types to match the spec.
             PreparedStatement pStmt = this.conn.clientPrepareStatement(sql, ResultSet.TYPE_SCROLL_INSENSITIVE, ResultSet.CONCUR_READ_ONLY);

@@ -470,13 +470,13 @@ public class ServerPreparedStatement extends ClientPreparedStatement {
                     TelemetrySpan span = sessionLocalCopy.getTelemetryHandler().startSpan(TelemetrySpanName.STMT_DEALLOCATE_PREPARED);
                     try (TelemetryScope scope = span.makeCurrent()) {
                         String dbOperation = getQueryInfo().getStatementKeyword();
-                        span.setAttribute(TelemetryAttribute.DB_NAME, getCurrentDatabase());
+                        span.setAttribute(TelemetryAttribute.DB_NAME, this::getCurrentDatabase);
                         span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                         span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                         span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
                         span.setAttribute(TelemetryAttribute.DB_USER, user);
-                        span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                        span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                        span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                        span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                         try {
                             ((NativeSession) locallyScopedConn.getSession()).getProtocol().sendCommand(
@@ -516,13 +516,13 @@ public class ServerPreparedStatement extends ClientPreparedStatement {
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.STMT_PREPARE);
             try (TelemetryScope scope = span.makeCurrent()) {
                 String dbOperation = getQueryInfo().getStatementKeyword();
-                span.setAttribute(TelemetryAttribute.DB_NAME, getCurrentDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, this::getCurrentDatabase);
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, dbOperation);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, dbOperation + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.connection.getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.connection.getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 this.invalidationException = null;
 

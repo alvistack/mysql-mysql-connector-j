@@ -431,13 +431,13 @@ public class NativeCharsetSettings extends CharsetMapping implements CharsetSett
     private void telemetryWrapSendCommand(Runnable command, TelemetrySpanName spanName, Object... args) {
         TelemetrySpan span = this.session.getTelemetryHandler().startSpan(spanName, args);
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.session.getHostInfo().getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.session.getHostInfo().getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             command.run();
         } catch (Throwable t) {
@@ -536,13 +536,13 @@ public class NativeCharsetSettings extends CharsetMapping implements CharsetSett
         if (customCollationIndexToCharsetName == null && this.session.getPropertySet().getBooleanProperty(PropertyKey.detectCustomCollations).getValue()) {
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.LOAD_COLLATIONS);
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_NAME, this.session.getHostInfo().getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.session.getHostInfo().getDatabase());
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SELECT);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SELECT + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 customCollationIndexToCollationName = new HashMap<>();
                 customCollationNameToCollationIndex = new HashMap<>();

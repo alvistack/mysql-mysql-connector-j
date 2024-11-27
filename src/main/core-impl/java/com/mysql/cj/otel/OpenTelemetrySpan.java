@@ -20,6 +20,8 @@
 
 package com.mysql.cj.otel;
 
+import java.util.function.Supplier;
+
 import com.mysql.cj.telemetry.TelemetryAttribute;
 import com.mysql.cj.telemetry.TelemetryScope;
 import com.mysql.cj.telemetry.TelemetrySpan;
@@ -50,6 +52,18 @@ public class OpenTelemetrySpan implements TelemetrySpan {
     @Override
     public void setAttribute(TelemetryAttribute key, long value) {
         this.span.setAttribute(key.getKey(), value);
+    }
+
+    @Override
+    public <T> void setAttribute(TelemetryAttribute key, Supplier<T> valueSupplier) {
+        T value = valueSupplier.get();
+        if (String.class.isInstance(value)) {
+            setAttribute(key, String.class.cast(value));
+        } else if (Long.class.isInstance(value)) {
+            setAttribute(key, Long.class.cast(value));
+        } else {
+            setAttribute(key, value == null ? null : value.toString());
+        }
     }
 
     @Override

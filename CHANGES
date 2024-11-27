@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#115586 (Bug#36850047), When upgrading to mysql connetor/j-8.4.0, creating a connection becomes too slow.
+
   - Fix for Bug#116630 (Bug#37272802), Tests fail on Windows if test database has upper/mixed case chars.
 
   - Fix for Bug#71143 (Bug#17967091), Calling ResultSet.updateRow should not set all field values in UPDATE.

@@ -93,8 +93,8 @@ public class CancelQueryTaskImpl extends TimerTask implements CancelQueryTask {
                                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_KILL + TelemetryAttribute.STATEMENT_SUFFIX);
                                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
                                 span.setAttribute(TelemetryAttribute.DB_USER, user);
-                                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                                 newSession.connect(hostInfo, user, password, database, 30000, new TransactionEventHandler() {
 

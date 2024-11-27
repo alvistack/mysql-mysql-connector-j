@@ -533,9 +533,7 @@ public interface JdbcConnection extends java.sql.Connection, MysqlConnection, Tr
      * Retrieves this connection object's current database name.
      *
      * @return current database name
-     * @throws SQLException
-     *             if an error occurs
      */
-    String getDatabase() throws SQLException;
+    String getDatabase();
 
 }

@@ -493,7 +493,7 @@ public class MultiHostMySQLConnection implements JdbcConnection {
     }
 
     @Override
-    public String getDatabase() throws SQLException {
+    public String getDatabase() {
         return getActiveMySQLConnection().getDatabase();
     }
 

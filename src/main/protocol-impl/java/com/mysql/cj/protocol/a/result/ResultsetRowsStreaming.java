@@ -118,13 +118,13 @@ public class ResultsetRowsStreaming<T extends ProtocolEntity> extends AbstractRe
                 Session session = this.owner.getSession();
                 TelemetrySpan span = session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_VARIABLE, "net_write_timeout");
                 try (TelemetryScope scope = span.makeCurrent()) {
-                    span.setAttribute(TelemetryAttribute.DB_NAME, session.getHostInfo().getDatabase());
+                    span.setAttribute(TelemetryAttribute.DB_NAME, () -> session.getHostInfo().getDatabase());
                     span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                     span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                     span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                    span.setAttribute(TelemetryAttribute.DB_USER, session.getHostInfo().getUser());
-                    span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                    span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                    span.setAttribute(TelemetryAttribute.DB_USER, () -> session.getHostInfo().getUser());
+                    span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                    span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                     int oldValue = this.protocol.getServerSession().getServerVariable("net_write_timeout", 60);
 

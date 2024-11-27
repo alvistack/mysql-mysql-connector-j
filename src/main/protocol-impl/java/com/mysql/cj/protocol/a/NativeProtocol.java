@@ -540,9 +540,9 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
             span1.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_INIT_DB);
             span1.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_INIT_DB + TelemetryAttribute.STATEMENT_SUFFIX);
             span1.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span1.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-            span1.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span1.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span1.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+            span1.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span1.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             try {
                 sendCommand(getNativeMessageBuilder().buildComInitDb(getSharedSendPacket(), database), false, 0);
@@ -1158,13 +1158,13 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.EXPLAIN_QUERY);
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_NAME, this.session.getHostInfo().getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.session.getHostInfo().getDatabase());
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_EXPLAIN);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_EXPLAIN + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
                 try {
                     NativePacketPayload resultPacket = sendCommand(
                             getNativeMessageBuilder().buildComQuery(getSharedSendPacket(), this.session, "EXPLAIN " + query), false, 0);
@@ -1927,13 +1927,13 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.STMT_EXECUTE);
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_NAME, this.session.getHostInfo().getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.session.getHostInfo().getDatabase());
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SHOW);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SHOW + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 try {
                     NativePacketPayload resultPacket = sendCommand(
@@ -2074,13 +2074,13 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
         TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SHOW_WARNINGS);
         try (TelemetryScope scope = span.makeCurrent()) {
-            span.setAttribute(TelemetryAttribute.DB_NAME, this.session.getHostInfo().getDatabase());
+            span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.session.getHostInfo().getDatabase());
             span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SHOW);
             span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SHOW + TelemetryAttribute.STATEMENT_SUFFIX);
             span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-            span.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-            span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-            span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+            span.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+            span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+            span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
             try {
                 NativePacketPayload resultPacket = sendCommand(getNativeMessageBuilder().buildComQuery(getSharedSendPacket(), this.session, "SHOW WARNINGS"),
@@ -2185,13 +2185,13 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
 
             TelemetrySpan span = this.session.getTelemetryHandler().startSpan(TelemetrySpanName.SET_VARIABLE, "time_zone");
             try (TelemetryScope scope = span.makeCurrent()) {
-                span.setAttribute(TelemetryAttribute.DB_NAME, this.session.getHostInfo().getDatabase());
+                span.setAttribute(TelemetryAttribute.DB_NAME, () -> this.session.getHostInfo().getDatabase());
                 span.setAttribute(TelemetryAttribute.DB_OPERATION, TelemetryAttribute.OPERATION_SET);
                 span.setAttribute(TelemetryAttribute.DB_STATEMENT, TelemetryAttribute.OPERATION_SET + TelemetryAttribute.STATEMENT_SUFFIX);
                 span.setAttribute(TelemetryAttribute.DB_SYSTEM, TelemetryAttribute.DB_SYSTEM_DEFAULT);
-                span.setAttribute(TelemetryAttribute.DB_USER, this.session.getHostInfo().getUser());
-                span.setAttribute(TelemetryAttribute.THREAD_ID, Thread.currentThread().getId());
-                span.setAttribute(TelemetryAttribute.THREAD_NAME, Thread.currentThread().getName());
+                span.setAttribute(TelemetryAttribute.DB_USER, () -> this.session.getHostInfo().getUser());
+                span.setAttribute(TelemetryAttribute.THREAD_ID, () -> Thread.currentThread().getId());
+                span.setAttribute(TelemetryAttribute.THREAD_NAME, () -> Thread.currentThread().getName());
 
                 StringBuilder query = new StringBuilder("SET SESSION time_zone='");
 
