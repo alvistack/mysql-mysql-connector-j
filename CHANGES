@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - WL#16558, Upgrade 3rd party libraries and tools.
+
   - Fix for Bug#37125271, RPM depends on java-headless 1:1.8.0 which makes java8 unnessessarily be installed.
 
   - Fix for Bug#115586 (Bug#36850047), When upgrading to mysql connetor/j-8.4.0, creating a connection becomes too slow.
