@@ -1324,22 +1324,16 @@ public class StringUtils {
             return -1;
         }
 
-        int lastIndex = searchIn.length() - 1;
-
-        int beginPos = startFrom;
+        int stopAt = searchIn.length() - 1;
+        int startPos = startFrom;
         int pos = -1;
-
-        boolean next = true;
-        while (next) {
-            pos = searchIn.indexOf(quoteChar, beginPos);
-            if (pos == -1 || pos == lastIndex || !searchIn.startsWith(quoteChar, pos + 1)) {
-                next = false;
-            } else {
-                beginPos = pos + 2;
+        while (true) {
+            pos = searchIn.indexOf(quoteChar, startPos);
+            if (pos == -1 || pos == stopAt || !searchIn.startsWith(quoteChar, pos + 1)) {
+                return pos;
             }
+            startPos = pos + 2;
         }
-
-        return pos;
     }
 
     public static String toString(byte[] value, int offset, int length, String encoding) {

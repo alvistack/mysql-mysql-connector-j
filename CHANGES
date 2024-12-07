@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#63992 (Bug#14598872), getTables did not return a result for table names with a dot in it.
+
   - WL#16558, Upgrade 3rd party libraries and tools.
 
   - Fix for Bug#37125271, RPM depends on java-headless 1:1.8.0 which makes java8 unnessessarily be installed.

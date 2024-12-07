@@ -47,6 +47,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
@@ -1075,7 +1076,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
                 this.rs = ((com.mysql.cj.jdbc.DatabaseMetaData) con.getMetaData()).extractForeignKeyFromCreateTable(db, "app tab");
                 assertTrue(this.rs.next(), "must return a row");
 
-                assertEquals(("comment; APPFK(`C2`) REFER `" + db + "`/ `app tab` (`C1`)").toUpperCase(), this.rs.getString(3).toUpperCase());
+                assertEquals(("Key info; APPFK(`C2`) REFER `" + db + "`/`app tab`(`C1`)").toUpperCase(), this.rs.getString(3).toUpperCase());
 
                 this.rs.close();
 
@@ -3163,7 +3164,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
     @Test
     public void testBug65871() throws Exception {
         createTable("testbug65871_foreign",
-                "(cpd_foreign_1_id int(8) not null, cpd_foreign_2_id int(8) not null," + "primary key (cpd_foreign_1_id, cpd_foreign_2_id)) ", "InnoDB");
+                "(cpd_foreign_1_id int(8) not null, cpd_foreign_2_id int(8) not null, primary key (cpd_foreign_1_id, cpd_foreign_2_id)) ", "InnoDB");
 
         Connection pedanticConn = null;
         Connection pedanticConn_IS = null;
@@ -3174,8 +3175,10 @@ public class MetaDataRegressionTest extends BaseTestCase {
             Properties props = new Properties();
             props.setProperty(PropertyKey.sslMode.getKeyName(), SslMode.DISABLED.name());
             props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
-
             props.setProperty(PropertyKey.sessionVariables.getKeyName(), "sql_mode=ansi");
+
+            props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "false");
+            props.setProperty(PropertyKey.pedantic.getKeyName(), "false");
             nonPedanticConn = getConnectionWithProps(props);
 
             props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "true");
@@ -3200,11 +3203,17 @@ public class MetaDataRegressionTest extends BaseTestCase {
             testBug65871_testCatalogs(pedanticConn_IS);
 
         } finally {
+            if (nonPedanticConn != null) {
+                nonPedanticConn.close();
+            }
+            if (nonPedanticConn_IS != null) {
+                nonPedanticConn_IS.close();
+            }
             if (pedanticConn != null) {
                 pedanticConn.close();
             }
-            if (nonPedanticConn != null) {
-                nonPedanticConn.close();
+            if (pedanticConn_IS != null) {
+                pedanticConn_IS.close();
             }
         }
     }
@@ -3325,7 +3334,7 @@ public class MetaDataRegressionTest extends BaseTestCase {
             // 5. getCrossReference(...)
             try {
                 this.rs = ((JdbcConnection) conn1).getPropertySet().<DatabaseTerm>getEnumProperty(PropertyKey.databaseTerm).getValue() == DatabaseTerm.SCHEMA
-                        ? conn1.getMetaData().getCrossReference(null, this.conn.getCatalog(), "testbug65871_foreign", unquotedDbName, null, unquotedTableName)
+                        ? conn1.getMetaData().getCrossReference(null, this.conn.getCatalog(), "testbug65871_foreign", null, unquotedDbName, unquotedTableName)
                         : conn1.getMetaData().getCrossReference(this.conn.getCatalog(), null, "testbug65871_foreign", unquotedDbName, null, unquotedTableName);
                 if (!this.rs.next()) {
                     failedTests.append("conn.getMetaData.getCrossReference(this.conn.getCatalog(), null, \"testbug65871_foreign\", unquotedDbName, null, "
@@ -5772,6 +5781,186 @@ public class MetaDataRegressionTest extends BaseTestCase {
             md = this.pstmt.getMetaData();
             assertEquals(2, md.getColumnCount());
         }
+    }
+
+    /**
+     * Tests fix for Bug#63992 (Bug#14598872), getTables did not return a result for table names with a dot in it.
+     *
+     * @throws Exception
+     */
+    @Test
+    public void testBug63992() throws Exception {
+        createDatabase("testBug63992db");
+        createTable("testBug63992db.testBug63992pk", "(id INT PRIMARY KEY, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)");
+        createTable("testBug63992db.testBug63992fk", "(id INT, pid INT, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                + "FOREIGN KEY (pid) REFERENCES testBug63992db.testBug63992pk (id) ON DELETE SET NULL)");
+        createTable("testBug63992db.`testBug63992db.testBug63992pk`",
+                "(id INT PRIMARY KEY, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP)");
+        createTable("testBug63992db.`testBug63992db.testBug63992fk`", "(id INT, pid INT, ts TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, "
+                + "FOREIGN KEY (pid) REFERENCES testBug63992db.`testBug63992db.testBug63992pk` (id) ON DELETE SET NULL)");
+
+        final boolean lowerCaseIdentifiers = this.conn.getMetaData().storesLowerCaseQuotedIdentifiers();
+
+        final Map<String, String> searchAndExpectedTables = new LinkedHashMap<>();
+        searchAndExpectedTables.put("testBug63992pk", lowerCaseIdentifiers ? "testbug63992pk" : "testBug63992pk");
+        searchAndExpectedTables.put("`testBug63992pk`", lowerCaseIdentifiers ? "testbug63992pk" : "testBug63992pk");
+        searchAndExpectedTables.put("testBug63992db.testBug63992pk", lowerCaseIdentifiers ? "testbug63992db.testbug63992pk" : "testBug63992db.testBug63992pk");
+        searchAndExpectedTables.put("`testBug63992db.testBug63992pk`",
+                lowerCaseIdentifiers ? "testbug63992db.testbug63992pk" : "testBug63992db.testBug63992pk");
+        final String[] expectedTableNamesForPatterns = lowerCaseIdentifiers ? new String[] { "testbug63992db.testbug63992fk", "testbug63992db.testbug63992pk" }
+                : new String[] { "testBug63992db.testBug63992fk", "testBug63992db.testBug63992pk" };
+        final String expectedDatabase = lowerCaseIdentifiers ? "testbug63992db" : "testBug63992db";
+
+        boolean pedantic = false;
+        boolean useIS = false;
+        boolean dbIsSchema = false;
+        do {
+            Properties props = new Properties();
+            props.setProperty(PropertyKey.pedantic.getKeyName(), Boolean.toString(pedantic));
+            props.setProperty(PropertyKey.useInformationSchema.getKeyName(), Boolean.toString(useIS));
+            props.setProperty(PropertyKey.databaseTerm.getKeyName(), dbIsSchema ? DatabaseTerm.SCHEMA.name() : DatabaseTerm.CATALOG.name());
+
+            try (Connection testConn = getConnectionWithProps(props)) {
+                final String testCase = String.format("Case: [pedantic: %s, useIS: %s, DbTerm: %s]", pedantic ? "Y" : "N", useIS ? "Y" : "N",
+                        dbIsSchema ? "SCHEMA" : "CATALOG");
+                DatabaseMetaData dbmd = testConn.getMetaData();
+
+                // Check DatabaseMetaData.getTables().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getTables(null, null, kv.getKey(), null);
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("TABLE_SCHEM") : this.rs.getString("TABLE_CAT"), testCase);
+                        assertEquals(kv.getValue(), this.rs.getString("TABLE_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getTables(), with table name pattern.
+                for (String t : new String[] { "testBug63992db.%", "testBug63992db%", "`testBug63992db.%`", "`testBug63992db%`" }) {
+                    this.rs = dbmd.getTables(null, null, t, null);
+                    if (pedantic && t.startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("TABLE_SCHEM") : this.rs.getString("TABLE_CAT"), testCase);
+                        assertEquals(expectedTableNamesForPatterns[0], this.rs.getString("TABLE_NAME"), testCase);
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("TABLE_SCHEM") : this.rs.getString("TABLE_CAT"), testCase);
+                        assertEquals(expectedTableNamesForPatterns[1], this.rs.getString("TABLE_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getPrimaryKeys().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getPrimaryKeys(null, null, kv.getKey());
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("TABLE_SCHEM") : this.rs.getString("TABLE_CAT"), testCase);
+                        assertEquals(kv.getValue(), this.rs.getString("TABLE_NAME"), testCase);
+                        assertEquals("id", this.rs.getString("COLUMN_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getBestRowIdentifier().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getBestRowIdentifier(null, null, kv.getKey(), DatabaseMetaData.bestRowSession, true);
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals("id", this.rs.getString("COLUMN_NAME"), testCase);
+                        assertEquals("int", this.rs.getString("TYPE_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getCrossReference().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getCrossReference(null, null, kv.getKey(), null, null, kv.getKey().replace("pk", "fk"));
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("PKTABLE_SCHEM") : this.rs.getString("PKTABLE_CAT"), testCase);
+                        assertEquals(kv.getValue(), this.rs.getString("PKTABLE_NAME"), testCase);
+                        assertEquals("id", this.rs.getString("PKCOLUMN_NAME"), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("FKTABLE_SCHEM") : this.rs.getString("FKTABLE_CAT"), testCase);
+                        assertEquals(kv.getValue().replace("pk", "fk"), this.rs.getString("FKTABLE_NAME"), testCase);
+                        assertEquals("pid", this.rs.getString("FKCOLUMN_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getExportedKeys().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getExportedKeys(null, null, kv.getKey());
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("PKTABLE_SCHEM") : this.rs.getString("PKTABLE_CAT"), testCase);
+                        assertEquals(kv.getValue(), this.rs.getString("PKTABLE_NAME"), testCase);
+                        assertEquals("id", this.rs.getString("PKCOLUMN_NAME"), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("FKTABLE_SCHEM") : this.rs.getString("FKTABLE_CAT"), testCase);
+                        assertEquals(kv.getValue().replace("pk", "fk"), this.rs.getString("FKTABLE_NAME"), testCase);
+                        assertEquals("pid", this.rs.getString("FKCOLUMN_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getImportedKeys().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getImportedKeys(null, null, kv.getKey().replace("pk", "fk"));
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("PKTABLE_SCHEM") : this.rs.getString("PKTABLE_CAT"), testCase);
+                        assertEquals(kv.getValue(), this.rs.getString("PKTABLE_NAME"), testCase);
+                        assertEquals("id", this.rs.getString("PKCOLUMN_NAME"), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("FKTABLE_SCHEM") : this.rs.getString("FKTABLE_CAT"), testCase);
+                        assertEquals(kv.getValue().replace("pk", "fk"), this.rs.getString("FKTABLE_NAME"), testCase);
+                        assertEquals("pid", this.rs.getString("FKCOLUMN_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getIndexInfo().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getIndexInfo(null, null, kv.getKey(), false, false);
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals(expectedDatabase, dbIsSchema ? this.rs.getString("TABLE_SCHEM") : this.rs.getString("TABLE_CAT"), testCase);
+                        assertEquals(kv.getValue(), this.rs.getString("TABLE_NAME"), testCase);
+                        assertEquals("PRIMARY", this.rs.getString("INDEX_NAME"), testCase);
+                        assertEquals("id", this.rs.getString("COLUMN_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+
+                // Check DatabaseMetaData.getVersionColumns().
+                for (Map.Entry<String, String> kv : searchAndExpectedTables.entrySet()) {
+                    this.rs = dbmd.getVersionColumns(null, null, kv.getKey());
+                    if (pedantic && kv.getKey().startsWith("`")) {
+                        assertFalse(this.rs.next(), testCase);
+                    } else {
+                        assertTrue(this.rs.next(), testCase);
+                        assertEquals("ts", this.rs.getString("COLUMN_NAME"), testCase);
+                        assertEquals("TIMESTAMP", this.rs.getString("TYPE_NAME"), testCase);
+                        assertFalse(this.rs.next(), testCase);
+                    }
+                }
+            }
+        } while ((pedantic = !pedantic) || (useIS = !useIS) || (dbIsSchema = !dbIsSchema));
     }
 
 }

@@ -251,7 +251,7 @@ public class MetadataTest extends BaseTestCase {
                             assertFalse(this.rs.next(), "Catalog pattern " + dbNamePattern + " should not be recognized.");
                         }
 
-                        this.rs = dbmd.getImportedKeys(null, null, "child");
+                        this.rs = dbmd.getImportedKeys(this.dbName, this.dbName, "child");
 
                         while (this.rs.next()) {
                             if (dbMapsToSchema) {
@@ -291,7 +291,7 @@ public class MetadataTest extends BaseTestCase {
                             assertFalse(this.rs.next(), "Catalog pattern " + dbNamePattern + " should not be recognized.");
                         }
 
-                        this.rs = dbmd.getExportedKeys(null, null, "parent");
+                        this.rs = dbmd.getExportedKeys(this.dbName, this.dbName, "parent");
 
                         while (this.rs.next()) {
                             if (dbMapsToSchema) {
@@ -1356,41 +1356,32 @@ public class MetadataTest extends BaseTestCase {
      */
     @Test
     public void testGetCrossReferenceUsingInfoSchema() throws Exception {
-        this.stmt.executeUpdate("DROP TABLE IF EXISTS child");
-        this.stmt.executeUpdate("DROP TABLE If EXISTS parent");
-        this.stmt.executeUpdate("CREATE TABLE parent(id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB");
-        this.stmt.executeUpdate(
-                "CREATE TABLE child(id INT, parent_id INT, " + "FOREIGN KEY (parent_id) REFERENCES parent(id) ON DELETE SET NULL) ENGINE=INNODB");
+        boolean runningOnWindows = Util.isRunningOnWindows();
+        createTable("testGetCrossReferenceParent", "(id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB");
+        createTable("testGetCrossReferenceChild",
+                "(id INT, parent_id INT, FOREIGN KEY (parent_id) REFERENCES testGetCrossReferenceParent(id) ON DELETE SET NULL) ENGINE=INNODB");
+
         Properties props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), "DISABLED");
         props.setProperty(PropertyKey.allowPublicKeyRetrieval.getKeyName(), "true");
         props.setProperty(PropertyKey.useInformationSchema.getKeyName(), "true");
         Connection conn1 = null;
-        try {
-            conn1 = getConnectionWithProps(props);
-            DatabaseMetaData metaData = conn1.getMetaData();
-            this.rs = metaData.getCrossReference(null, null, "parent", null, null, "child");
-            assertTrue(this.rs.next());
-            assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
-            assertEquals("id", this.rs.getString("PKCOLUMN_NAME"));
-            assertEquals("child", this.rs.getString("FKTABLE_NAME"));
-            assertEquals("parent_id", this.rs.getString("FKCOLUMN_NAME"));
-            assertFalse(this.rs.next());
-        } finally {
-            this.stmt.executeUpdate("DROP TABLE IF EXISTS child");
-            this.stmt.executeUpdate("DROP TABLE If EXISTS parent");
-            if (conn1 != null) {
-                conn1.close();
-            }
-        }
+        conn1 = getConnectionWithProps(props);
+        DatabaseMetaData metaData = conn1.getMetaData();
+        this.rs = metaData.getCrossReference(null, null, "testGetCrossReferenceParent", null, null, "testGetCrossReferenceChild");
+        assertTrue(this.rs.next());
+        assertEquals(runningOnWindows ? "testgetcrossreferenceparent" : "testGetCrossReferenceParent", this.rs.getString("PKTABLE_NAME"));
+        assertEquals("id", this.rs.getString("PKCOLUMN_NAME"));
+        assertEquals(runningOnWindows ? "testgetcrossreferencechild" : "testGetCrossReferenceChild", this.rs.getString("FKTABLE_NAME"));
+        assertEquals("parent_id", this.rs.getString("FKCOLUMN_NAME"));
+        assertFalse(this.rs.next());
     }
 
     @Test
     public void testGetExportedKeys() throws Exception {
-        this.stmt.executeUpdate("DROP TABLE IF EXISTS child");
-        this.stmt.executeUpdate("DROP TABLE If EXISTS parent");
-        createTable("parent", "(id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB");
-        createTable("child", "(id INT, parent_id INT, FOREIGN KEY (parent_id) REFERENCES parent(id) ON DELETE SET NULL) ENGINE=INNODB");
+        createTable("testGetExportedKeysParent", "(id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB");
+        createTable("testGetExportedKeysChild",
+                "(id INT, parent_id INT, FOREIGN KEY (parent_id) REFERENCES testGetExportedKeysParent(id) ON DELETE SET NULL) ENGINE=INNODB");
 
         Properties props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), "DISABLED");
@@ -1405,13 +1396,13 @@ public class MetadataTest extends BaseTestCase {
                     testConn = getConnectionWithProps(props);
                     DatabaseMetaData metaData = testConn.getMetaData();
 
-                    this.rs = metaData.getExportedKeys(null, null, "parent");
+                    this.rs = metaData.getExportedKeys(null, null, "testGetExportedKeysParent");
                     testGetExportedKeys_checkResult(useIS, dbMapsToSchema);
 
-                    this.rs = metaData.getExportedKeys(null, this.dbName, "parent");
+                    this.rs = metaData.getExportedKeys(null, this.dbName, "testGetExportedKeysParent");
                     testGetExportedKeys_checkResult(useIS, dbMapsToSchema);
 
-                    this.rs = metaData.getExportedKeys(this.dbName, null, "parent");
+                    this.rs = metaData.getExportedKeys(this.dbName, null, "testGetExportedKeysParent");
                     testGetExportedKeys_checkResult(useIS, dbMapsToSchema);
                 } finally {
                     if (testConn != null) {
@@ -1420,8 +1411,6 @@ public class MetadataTest extends BaseTestCase {
                 }
             }
         }
-        this.stmt.executeUpdate("DROP TABLE IF EXISTS child");
-        this.stmt.executeUpdate("DROP TABLE If EXISTS parent");
     }
 
     private void testGetExportedKeys_checkResult(boolean useIS, boolean dbMapsToSchema) throws Exception {
@@ -1438,22 +1427,23 @@ public class MetadataTest extends BaseTestCase {
             assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FKTABLE_CAT"));
             assertNull(this.rs.getString("FKTABLE_SCHEM"));
         }
-        assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
+        assertEquals(runningOnWindows ? "testgetexportedkeysparent" : "testGetExportedKeysParent", this.rs.getString("PKTABLE_NAME"));
         assertEquals("id", this.rs.getString("PKCOLUMN_NAME"));
-        assertEquals("child", this.rs.getString("FKTABLE_NAME"));
+        assertEquals(runningOnWindows ? "testgetexportedkeyschild" : "testGetExportedKeysChild", this.rs.getString("FKTABLE_NAME"));
         assertEquals("parent_id", this.rs.getString("FKCOLUMN_NAME"));
         assertEquals(1, this.rs.getShort("KEY_SEQ"));
         assertEquals(DatabaseMetaData.importedKeyRestrict, this.rs.getShort("UPDATE_RULE"));
         assertEquals(DatabaseMetaData.importedKeySetNull, this.rs.getShort("DELETE_RULE"));
-        assertEquals("child_ibfk_1", this.rs.getString("FK_NAME"));
+        assertEquals(runningOnWindows ? "testgetexportedkeyschild_ibfk_1" : "testGetExportedKeysChild_ibfk_1", this.rs.getString("FK_NAME"));
         assertEquals(useIS ? "PRIMARY" : null, this.rs.getString("PK_NAME")); // PK_NAME is available only with I_S
         assertEquals(DatabaseMetaData.importedKeyNotDeferrable, this.rs.getShort("DEFERRABILITY"));
     }
 
     @Test
     public void testGetImportedKeys() throws Exception {
-        createTable("parent", "(id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB");
-        createTable("child", "(id INT, parent_id INT, FOREIGN KEY (parent_id) REFERENCES parent(id) ON DELETE SET NULL) ENGINE=INNODB");
+        createTable("testGetImportedKeysParent", "(id INT NOT NULL, PRIMARY KEY (id)) ENGINE=INNODB");
+        createTable("testGetImportedKeysChild",
+                "(id INT, parent_id INT, FOREIGN KEY (parent_id) REFERENCES testGetImportedKeysParent(id) ON DELETE SET NULL) ENGINE=INNODB");
 
         Properties props = new Properties();
         props.setProperty(PropertyKey.sslMode.getKeyName(), "DISABLED");
@@ -1468,13 +1458,13 @@ public class MetadataTest extends BaseTestCase {
                     testConn = getConnectionWithProps(props);
                     DatabaseMetaData metaData = testConn.getMetaData();
 
-                    this.rs = metaData.getImportedKeys(null, null, "child");
+                    this.rs = metaData.getImportedKeys(null, null, "testGetImportedKeysChild");
                     testGetImportedKeys_checkResult(useIS, dbMapsToSchema);
 
-                    this.rs = metaData.getImportedKeys(null, this.dbName, "child");
+                    this.rs = metaData.getImportedKeys(null, this.dbName, "testGetImportedKeysChild");
                     testGetImportedKeys_checkResult(useIS, dbMapsToSchema);
 
-                    this.rs = metaData.getImportedKeys(this.dbName, null, "child");
+                    this.rs = metaData.getImportedKeys(this.dbName, null, "testGetImportedKeysChild");
                     testGetImportedKeys_checkResult(useIS, dbMapsToSchema);
                 } finally {
                     if (testConn != null) {
@@ -1499,14 +1489,14 @@ public class MetadataTest extends BaseTestCase {
             assertEquals(runningOnWindows ? this.dbName.toLowerCase() : this.dbName, this.rs.getString("FKTABLE_CAT"));
             assertNull(this.rs.getString("FKTABLE_SCHEM"));
         }
-        assertEquals("parent", this.rs.getString("PKTABLE_NAME"));
+        assertEquals(runningOnWindows ? "testgetimportedkeysparent" : "testGetImportedKeysParent", this.rs.getString("PKTABLE_NAME"));
         assertEquals("id", this.rs.getString("PKCOLUMN_NAME"));
-        assertEquals("child", this.rs.getString("FKTABLE_NAME"));
+        assertEquals(runningOnWindows ? "testgetimportedkeyschild" : "testGetImportedKeysChild", this.rs.getString("FKTABLE_NAME"));
         assertEquals("parent_id", this.rs.getString("FKCOLUMN_NAME"));
         assertEquals(1, this.rs.getShort("KEY_SEQ"));
         assertEquals(DatabaseMetaData.importedKeyRestrict, this.rs.getShort("UPDATE_RULE"));
         assertEquals(DatabaseMetaData.importedKeySetNull, this.rs.getShort("DELETE_RULE"));
-        assertEquals("child_ibfk_1", this.rs.getString("FK_NAME"));
+        assertEquals(runningOnWindows ? "testgetimportedkeyschild_ibfk_1" : "testGetImportedKeysChild_ibfk_1", this.rs.getString("FK_NAME"));
         assertEquals(useIS ? "PRIMARY" : null, this.rs.getString("PK_NAME")); // PK_NAME is available only with I_S
         assertEquals(DatabaseMetaData.importedKeyNotDeferrable, this.rs.getShort("DEFERRABILITY"));
     }

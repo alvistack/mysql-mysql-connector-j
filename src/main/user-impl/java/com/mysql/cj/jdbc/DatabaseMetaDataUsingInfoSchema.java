@@ -53,7 +53,6 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
         FUNCTION_COLUMN_UNKNOWN, FUNCTION_COLUMN_IN, FUNCTION_COLUMN_INOUT, FUNCTION_COLUMN_OUT, FUNCTION_COLUMN_RETURN, FUNCTION_COLUMN_RESULT,
         // NULLABLE values
         FUNCTION_NO_NULLS, FUNCTION_NULLABLE, FUNCTION_NULLABLE_UNKNOWN;
-
     }
 
     private static Map<ServerVersion, String> keywordsCache = Collections.synchronizedMap(new LRUCache<>(10));
@@ -66,7 +65,6 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     protected ResultSet executeMetadataQuery(PreparedStatement pStmt) throws SQLException {
         ResultSet rs = pStmt.executeQuery();
         ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).setOwningStatement(null);
-
         return rs;
     }
 
@@ -75,7 +73,7 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
         final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         final String dbPattern = getDatabase(catalog, schema);
         final String dbFilter = this.pedantic ? dbPattern : StringUtils.unQuoteIdentifier(dbPattern, this.quotedId);
-        final String tableNameFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
+        final String tableFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
         final String columnNameFilter = this.pedantic ? columnNamePattern : StringUtils.unQuoteIdentifier(columnNamePattern, this.quotedId);
 
         StringBuilder query = new StringBuilder(dbMapsToSchema ? "SELECT TABLE_CATALOG, TABLE_SCHEMA," : "SELECT TABLE_SCHEMA, NULL,");
@@ -96,14 +94,13 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
             pStmt.setString(nextId++, dbFilter);
-            pStmt.setString(nextId++, tableNameFilter);
+            pStmt.setString(nextId++, tableFilter);
             if (columnNameFilter != null) {
                 pStmt.setString(nextId, columnNameFilter);
             }
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(getColumnPrivilegesFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -281,18 +278,19 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
     }
 
     @Override
-    public ResultSet getCrossReference(String primaryCatalog, String primarySchema, String primaryTable, String foreignCatalog, String foreignSchema,
-            String foreignTable) throws SQLException {
-        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
-        if (primaryTable == null) {
+    public ResultSet getCrossReference(final String parentCatalog, final String parentSchema, final String parentTable, final String foreignCatalog,
+            final String foreignSchema, final String foreignTable) throws SQLException {
+        if (parentTable == null || foreignTable == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String primaryDb = getDatabase(primaryCatalog, primarySchema);
-        primaryDb = this.pedantic ? primaryDb : StringUtils.unQuoteIdentifier(primaryDb, this.quotedId);
-        String foreignDb = getDatabase(foreignCatalog, foreignSchema);
-        foreignDb = this.pedantic ? foreignDb : StringUtils.unQuoteIdentifier(foreignDb, this.quotedId);
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        final String parentDbFromTerm = getDatabase(parentCatalog, parentSchema);
+        final String parentDbFilter = this.pedantic ? parentDbFromTerm : StringUtils.unQuoteIdentifier(parentDbFromTerm, this.quotedId);
+        final String parentTableFilter = this.pedantic ? parentTable : StringUtils.unQuoteIdentifier(parentTable, this.quotedId);
+        final String foreignDbFilter = getDatabase(foreignCatalog, foreignSchema);
+        final String foreignTableFilter = this.pedantic ? foreignTable : StringUtils.unQuoteIdentifier(foreignTable, this.quotedId);
 
         StringBuilder query = new StringBuilder(
                 dbMapsToSchema ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
@@ -313,11 +311,11 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
         query.append("  AND A.REFERENCED_TABLE_NAME = TC.TABLE_NAME");
         query.append("  AND TC.CONSTRAINT_TYPE IN ('UNIQUE', 'PRIMARY KEY'))");
         query.append("WHERE B.CONSTRAINT_TYPE = 'FOREIGN KEY'");
-        if (primaryDb != null) {
+        if (parentDbFilter != null) {
             query.append(" AND A.REFERENCED_TABLE_SCHEMA=?");
         }
         query.append(" AND A.REFERENCED_TABLE_NAME=?");
-        if (foreignDb != null) {
+        if (foreignDbFilter != null) {
             query.append(" AND A.TABLE_SCHEMA = ?");
         }
         query.append(" AND A.TABLE_NAME=?");
@@ -328,18 +326,17 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
         try {
             pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-            if (primaryDb != null) {
-                pStmt.setString(nextId++, primaryDb);
+            if (parentDbFilter != null) {
+                pStmt.setString(nextId++, parentDbFilter);
             }
-            pStmt.setString(nextId++, primaryTable);
-            if (foreignDb != null) {
-                pStmt.setString(nextId++, foreignDb);
+            pStmt.setString(nextId++, parentTableFilter);
+            if (foreignDbFilter != null) {
+                pStmt.setString(nextId++, foreignDbFilter);
             }
-            pStmt.setString(nextId, foreignTable);
+            pStmt.setString(nextId, foreignTableFilter);
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFkMetadataFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -350,14 +347,15 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     @Override
     public ResultSet getExportedKeys(String catalog, String schema, String table) throws SQLException {
-        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (table == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String dbFilter = getDatabase(catalog, schema);
-        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        final String dbFromTerm = getDatabase(catalog, schema);
+        final String dbFilter = this.pedantic ? dbFromTerm : StringUtils.unQuoteIdentifier(dbFromTerm, this.quotedId);
+        final String tableFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
 
         StringBuilder query = new StringBuilder(
                 dbMapsToSchema ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
@@ -389,16 +387,13 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
         try {
             pStmt = prepareMetaDataSafeStatement(query.toString());
             int nextId = 1;
-
             if (dbFilter != null) {
                 pStmt.setString(nextId++, dbFilter);
             }
-            pStmt.setString(nextId, table);
+            pStmt.setString(nextId, tableFilter);
 
             ResultSet rs = executeMetadataQuery(pStmt);
-
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFkMetadataFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -428,14 +423,15 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     @Override
     public ResultSet getImportedKeys(String catalog, String schema, String table) throws SQLException {
-        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (table == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String dbFilter = getDatabase(catalog, schema);
-        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        final String dbFromTerm = getDatabase(catalog, schema);
+        final String dbFilter = this.pedantic ? dbFromTerm : StringUtils.unQuoteIdentifier(dbFromTerm, this.quotedId);
+        final String tableFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
 
         StringBuilder query = new StringBuilder(
                 dbMapsToSchema ? "SELECT DISTINCT A.CONSTRAINT_CATALOG AS PKTABLE_CAT, A.REFERENCED_TABLE_SCHEMA AS PKTABLE_SCHEM,"
@@ -468,12 +464,10 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             if (dbFilter != null) {
                 pStmt.setString(nextId++, dbFilter);
             }
-            pStmt.setString(nextId, table);
+            pStmt.setString(nextId, tableFilter);
 
             ResultSet rs = executeMetadataQuery(pStmt);
-
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFkMetadataFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -484,9 +478,15 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     @Override
     public ResultSet getIndexInfo(String catalog, String schema, String table, boolean unique, boolean approximate) throws SQLException {
+        if (table == null) {
+            throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
+                    getExceptionInterceptor());
+        }
+
         final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
-        String dbFilter = getDatabase(catalog, schema);
-        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String dbFromTerm = getDatabase(catalog, schema);
+        final String dbFilter = this.pedantic ? dbFromTerm : StringUtils.unQuoteIdentifier(dbFromTerm, this.quotedId);
+        final String tableFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
 
         StringBuilder query = new StringBuilder(
                 dbMapsToSchema ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM," : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
@@ -498,7 +498,6 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             query.append(" TABLE_SCHEMA = ? AND");
         }
         query.append(" TABLE_NAME = ?");
-
         if (unique) {
             query.append(" AND NON_UNIQUE=0 ");
         }
@@ -513,12 +512,10 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             if (dbFilter != null) {
                 pStmt.setString(nextId++, dbFilter);
             }
-            pStmt.setString(nextId, table);
+            pStmt.setString(nextId, tableFilter);
 
             ResultSet rs = executeMetadataQuery(pStmt);
-
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createIndexInfoFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -529,14 +526,15 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
     @Override
     public ResultSet getPrimaryKeys(String catalog, String schema, String table) throws SQLException {
-        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
         if (table == null) {
             throw SQLError.createSQLException(Messages.getString("DatabaseMetaData.2"), MysqlErrorNumbers.SQLSTATE_CONNJ_ILLEGAL_ARGUMENT,
                     getExceptionInterceptor());
         }
 
-        String dbFilter = getDatabase(catalog, schema);
-        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final boolean dbMapsToSchema = this.databaseTerm.getValue() == DatabaseTerm.SCHEMA;
+        final String dbFromTerm = getDatabase(catalog, schema);
+        final String dbFilter = this.pedantic ? dbFromTerm : StringUtils.unQuoteIdentifier(dbFromTerm, this.quotedId);
+        final String tableFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
 
         StringBuilder query = new StringBuilder(
                 dbMapsToSchema ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM," : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
@@ -555,11 +553,10 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             if (dbFilter != null) {
                 pStmt.setString(nextId++, dbFilter);
             }
-            pStmt.setString(nextId, table);
+            pStmt.setString(nextId, tableFilter);
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(getPrimaryKeysFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -579,9 +576,9 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
         StringBuilder query = new StringBuilder(
                 dbMapsToSchema ? "SELECT TABLE_CATALOG AS TABLE_CAT, TABLE_SCHEMA AS TABLE_SCHEM," : "SELECT TABLE_SCHEMA AS TABLE_CAT, NULL AS TABLE_SCHEM,");
-        query.append(
-                " TABLE_NAME, CASE WHEN TABLE_TYPE='BASE TABLE' THEN CASE WHEN TABLE_SCHEMA = 'mysql' OR TABLE_SCHEMA = 'performance_schema' THEN 'SYSTEM TABLE' ");
-        query.append("ELSE 'TABLE' END WHEN TABLE_TYPE='TEMPORARY' THEN 'LOCAL_TEMPORARY' ELSE TABLE_TYPE END AS TABLE_TYPE, ");
+        query.append(" TABLE_NAME, CASE WHEN TABLE_TYPE='BASE TABLE' THEN ");
+        query.append("CASE WHEN TABLE_SCHEMA='mysql' OR TABLE_SCHEMA='performance_schema' OR TABLE_SCHEMA='sys' THEN 'SYSTEM TABLE' ELSE 'TABLE' END ");
+        query.append("WHEN TABLE_TYPE='TEMPORARY' THEN 'LOCAL_TEMPORARY' ELSE TABLE_TYPE END AS TABLE_TYPE, ");
         query.append("TABLE_COMMENT AS REMARKS, NULL AS TYPE_CAT, NULL AS TYPE_SCHEM, NULL AS TYPE_NAME, NULL AS SELF_REFERENCING_COL_NAME, ");
         query.append("NULL AS REF_GENERATION FROM INFORMATION_SCHEMA.TABLES");
 
@@ -643,8 +640,9 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
                     getExceptionInterceptor());
         }
 
-        String dbFilter = getDatabase(catalog, schema);
-        dbFilter = this.pedantic ? dbFilter : StringUtils.unQuoteIdentifier(dbFilter, this.quotedId);
+        final String dbFromTerm = getDatabase(catalog, schema);
+        final String dbFilter = this.pedantic ? dbFromTerm : StringUtils.unQuoteIdentifier(dbFromTerm, this.quotedId);
+        final String tableFilter = this.pedantic ? table : StringUtils.unQuoteIdentifier(table, this.quotedId);
 
         StringBuilder query = new StringBuilder("SELECT NULL AS SCOPE, COLUMN_NAME, ");
         appendJdbcTypeMappingQuery(query, "DATA_TYPE", "COLUMN_TYPE");
@@ -682,11 +680,10 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
             if (dbFilter != null) {
                 pStmt.setString(nextId++, dbFilter);
             }
-            pStmt.setString(nextId, table);
+            pStmt.setString(nextId, tableFilter);
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(getVersionColumnsFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -750,7 +747,6 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(createFieldMetadataForGetProcedures());
-
             return rs;
         } finally {
             if (pStmt != null) {
@@ -987,7 +983,6 @@ public class DatabaseMetaDataUsingInfoSchema extends DatabaseMetaData {
 
             ResultSet rs = executeMetadataQuery(pStmt);
             ((com.mysql.cj.jdbc.result.ResultSetInternalMethods) rs).getColumnDefinition().setFields(getFunctionsFields());
-
             return rs;
         } finally {
             if (pStmt != null) {
