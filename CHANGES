@@ -3,6 +3,8 @@
 
 Version 9.2.0
 
+  - Fix for Bug#116318 (Bug#37152533), useServerPrepStmts useLocalTransactionState cause first execute rollback failure.
+
   - Fix for Bug#116955 (Bug#37383012), Tests fail after server changed cipher for xdevapi.
 
   - Fix for Bug#63992 (Bug#14598872), getTables did not return a result for table names with a dot in it.

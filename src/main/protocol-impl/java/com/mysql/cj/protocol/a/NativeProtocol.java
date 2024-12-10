@@ -761,7 +761,7 @@ public class NativeProtocol extends AbstractProtocol<NativePacketPayload> implem
      */
     private NativePacketPayload checkErrorMessage(int command) {
         NativePacketPayload resultPacket = null;
-        this.serverSession.setStatusFlags(0);
+        this.serverSession.setStatusFlags(0, command == NativeConstants.COM_STMT_PREPARE);
 
         try {
             // Check return value, if we get a java.io.EOFException, the server has gone away. We'll pass it on up the exception chain and let someone higher up
