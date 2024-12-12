@@ -977,7 +977,7 @@ public class SecureSessionTest extends DevApiBaseTestCase {
             expectedCipher2 = "TLS_AES_256_GCM_SHA384";
             testCipher2 = "TLS_AES_128_GCM_SHA256";
         }
-        if (mysqlVersionMeetsMinimum(this.baseUrl, ServerVersion.parseVersion("9.2.0"))) {
+        if (mysqlVersionMeetsMinimum(ServerVersion.parseVersion("9.2.0"))) {
             expectedCipher2 = "TLS_AES_128_GCM_SHA256";
         }
 
