@@ -1,0 +1,7 @@
+mysql-connector-java: bad-jar-name
+mysql-connector-java: copyright-without-copyright-notice
+mysql-connector-java: executable-jar-without-main-class
+mysql-connector-java: initial-upload-closes-no-bugs
+mysql-connector-java: missing-dep-on-jarwrapper
+mysql-connector-java: virtual-package-depends-without-real-package-depends Depends: java-runtime
+mysql-connector-java: zero-byte-file-in-doc-directory
